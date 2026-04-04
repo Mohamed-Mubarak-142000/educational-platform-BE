@@ -10,7 +10,7 @@ import { otpTemplate, resetPasswordTemplate, teacherInviteTemplate, studentInvit
 // @access  Public
 export const registerUser = async (req: Request, res: Response) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, phone, parentEmail, stageId, subscribeLiveLessons } = req.body;
 
     const userExists = await User.findOne({ email });
 
@@ -27,6 +27,10 @@ export const registerUser = async (req: Request, res: Response) => {
       email,
       password,
       role: 'Student',
+      ...(phone && { phone }),
+      ...(parentEmail && { parentEmail }),
+      ...(stageId && { stageId }),
+      subscribeLiveLessons: subscribeLiveLessons === true || subscribeLiveLessons === 'true',
       otp,
       otpExpires,
       otpLastSent: new Date(),
@@ -186,7 +190,7 @@ export const loginUser = async (req: Request, res: Response) => {
 // @access  Private
 export const getUserProfile = async (req: any, res: Response) => {
   try {
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user._id).select('-password -otp -otpExpires -otpLastSent -resetPasswordToken -resetPasswordExpires');
 
     if (user) {
       res.json({
@@ -194,6 +198,14 @@ export const getUserProfile = async (req: any, res: Response) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        phone: user.phone,
+        subject: user.subject,
+        stageId: user.stageId,
+        subscribeLiveLessons: user.subscribeLiveLessons,
+        parentEmail: user.parentEmail,
+        profileImage: user.profileImage,
+        status: user.status,
+        isVerified: user.isVerified,
         mustChangePassword: user.mustChangePassword,
       });
     } else {
@@ -204,12 +216,44 @@ export const getUserProfile = async (req: any, res: Response) => {
   }
 };
 
+// @desc    Update own profile
+// @route   PUT /api/users/profile
+// @access  Private
+export const updateUserProfile = async (req: any, res: Response) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      res.status(404).json({ message: 'User not found' });
+      return;
+    }
+    const { name, phone, stageId, profileImage } = req.body;
+    if (name !== undefined) user.name = name;
+    if (phone !== undefined) user.phone = phone;
+    if (stageId !== undefined) user.stageId = stageId || undefined;
+    if (profileImage !== undefined) user.profileImage = profileImage;
+    const updated = await user.save();
+    res.json({
+      _id: updated._id,
+      name: updated.name,
+      email: updated.email,
+      role: updated.role,
+      phone: updated.phone,
+      stageId: updated.stageId,
+      profileImage: updated.profileImage,
+      status: updated.status,
+      mustChangePassword: updated.mustChangePassword,
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Admin creates a teacher account
 // @route   POST /api/users/teachers
 // @access  Private/Admin
 export const createTeacher = async (req: Request, res: Response) => {
   try {
-    const { name, email, phone, subject, status } = req.body;
+    const { name, email, phone, subject, stageId, status } = req.body;
 
     const userExists = await User.findOne({ email });
     if (userExists) {
@@ -217,7 +261,7 @@ export const createTeacher = async (req: Request, res: Response) => {
       return;
     }
 
-    const tempPassword = crypto.randomBytes(8).toString('hex');
+    const tempPassword = 'Academix123456';
 
     const teacher = await User.create({
       name,
@@ -228,10 +272,11 @@ export const createTeacher = async (req: Request, res: Response) => {
       mustChangePassword: true,
       phone,
       subject,
+      stageId: stageId || undefined,
       status: status || 'Active',
     });
 
-    const template = teacherInviteTemplate(teacher.name, teacher.email, tempPassword);
+    const template = teacherInviteTemplate(teacher.name, teacher.email, tempPassword, teacher.subject);
     try {
       await sendEmail({
         email: teacher.email,
@@ -250,6 +295,7 @@ export const createTeacher = async (req: Request, res: Response) => {
       role: teacher.role,
       phone: teacher.phone,
       subject: teacher.subject,
+      stageId: teacher.stageId,
       status: teacher.status,
       mustChangePassword: teacher.mustChangePassword,
     });
@@ -263,7 +309,7 @@ export const createTeacher = async (req: Request, res: Response) => {
 // @access  Private/Admin
 export const createStudent = async (req: Request, res: Response) => {
   try {
-    const { name, email, phone, status } = req.body;
+    const { name, email, phone, status, stageId, subscribeLiveLessons, parentEmail, profileImage } = req.body;
 
     const userExists = await User.findOne({ email });
     if (userExists) {
@@ -282,6 +328,10 @@ export const createStudent = async (req: Request, res: Response) => {
       mustChangePassword: true,
       phone,
       status: status || 'Active',
+      stageId: stageId || undefined,
+      subscribeLiveLessons: subscribeLiveLessons === 'true' || subscribeLiveLessons === true,
+      parentEmail: parentEmail || undefined,
+      profileImage: profileImage || undefined,
     });
 
     const template = studentInviteTemplate(student.name, student.email, tempPassword);
@@ -303,6 +353,10 @@ export const createStudent = async (req: Request, res: Response) => {
       role: student.role,
       phone: student.phone,
       status: student.status,
+      stageId: student.stageId,
+      subscribeLiveLessons: student.subscribeLiveLessons,
+      parentEmail: student.parentEmail,
+      profileImage: student.profileImage,
       mustChangePassword: student.mustChangePassword,
     });
   } catch (error: any) {
@@ -316,6 +370,13 @@ const applyUserUpdates = (user: any, updates: any) => {
   if (updates.phone !== undefined) user.phone = updates.phone;
   if (updates.subject !== undefined) user.subject = updates.subject;
   if (updates.status !== undefined) user.status = updates.status;
+  if (updates.profileImage !== undefined) user.profileImage = updates.profileImage;
+  // Student-specific fields
+  if (updates.stageId !== undefined) user.stageId = updates.stageId || undefined;
+  if (updates.subscribeLiveLessons !== undefined) {
+    user.subscribeLiveLessons = updates.subscribeLiveLessons === 'true' || updates.subscribeLiveLessons === true;
+  }
+  if (updates.parentEmail !== undefined) user.parentEmail = updates.parentEmail || undefined;
 };
 
 // @desc    Get teachers
@@ -358,6 +419,7 @@ export const updateTeacher = async (req: Request, res: Response) => {
     }
 
     applyUserUpdates(teacher, req.body);
+    if (req.body.stageId !== undefined) teacher.stageId = req.body.stageId || undefined;
     const updated = await teacher.save();
     res.json({
       _id: updated._id,
@@ -366,7 +428,9 @@ export const updateTeacher = async (req: Request, res: Response) => {
       role: updated.role,
       phone: updated.phone,
       subject: updated.subject,
+      stageId: updated.stageId,
       status: updated.status,
+      profileImage: updated.profileImage,
     });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -438,6 +502,10 @@ export const updateStudent = async (req: Request, res: Response) => {
       role: updated.role,
       phone: updated.phone,
       status: updated.status,
+      stageId: updated.stageId,
+      subscribeLiveLessons: updated.subscribeLiveLessons,
+      parentEmail: updated.parentEmail,
+      profileImage: updated.profileImage,
     });
   } catch (error: any) {
     res.status(500).json({ message: error.message });

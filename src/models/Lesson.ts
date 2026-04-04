@@ -1,26 +1,32 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
 export interface ILesson extends Document {
-  sectionId: mongoose.Types.ObjectId;
+  sectionId?: mongoose.Types.ObjectId;
+  unitId?: mongoose.Types.ObjectId;
   title: string;
   description?: string;
   videoUrl?: string;
   pdfUrl?: string;
   imageUrl?: string;
   modelUrl?: string;
+  modelExplanation?: string;
+  audioUrl?: string;
   order: number;
   duration?: number;
 }
 
 const LessonSchema = new Schema<ILesson>(
   {
-    sectionId: { type: Schema.Types.ObjectId, ref: 'Section', required: true },
+    sectionId: { type: Schema.Types.ObjectId, ref: 'Section' },
+    unitId: { type: Schema.Types.ObjectId, ref: 'Unit' },
     title: { type: String, required: true },
     description: { type: String },
     videoUrl: { type: String },
     pdfUrl: { type: String },
     imageUrl: { type: String },
     modelUrl: { type: String },
+    modelExplanation: { type: String },
+    audioUrl: { type: String },
     order: { type: Number, required: true, default: 0 },
     duration: { type: Number },
   },
