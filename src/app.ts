@@ -22,6 +22,11 @@ import quizRoutes from './routes/quizRoutes';
 import discussionRoutes from './routes/discussionRoutes';
 import paymentRoutes from './routes/paymentRoutes';
 import subscriptionRoutes from './routes/subscriptionRoutes';
+import stageRoutes from './routes/stageRoutes';
+import subjectRoutes from './routes/subjectRoutes';
+import unitRoutes from './routes/unitRoutes';
+import teacherApplicationRoutes from './routes/teacherApplicationRoutes';
+import teacherScheduleRoutes from './routes/teacherScheduleRoutes';
 
 // Use Routes here
 app.use('/api/users', userRoutes);
@@ -32,6 +37,11 @@ app.use('/api/quizzes', quizRoutes);
 app.use('/api/discussions', discussionRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/stages', stageRoutes);
+app.use('/api/subjects', subjectRoutes);
+app.use('/api/units', unitRoutes);
+app.use('/api/teacher-applications', teacherApplicationRoutes);
+app.use('/api/teacher-schedules', teacherScheduleRoutes);
 
 // Error Handling
 app.use(notFound);

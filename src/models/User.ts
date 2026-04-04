@@ -8,6 +8,9 @@ export interface IUser extends Document {
   role: 'Student' | 'Teacher' | 'Admin';
   phone?: string;
   subject?: string;
+  stageId?: mongoose.Types.ObjectId;
+  subscribeLiveLessons?: boolean;
+  parentEmail?: string;
   status?: 'Active' | 'Inactive';
   profileImage?: string;
   isVerified: boolean;
@@ -28,6 +31,9 @@ const userSchema = new Schema<IUser>(
     role: { type: String, enum: ['Student', 'Teacher', 'Admin'], default: 'Student' },
     phone: { type: String },
     subject: { type: String },
+    stageId: { type: Schema.Types.ObjectId, ref: 'Stage' },
+    subscribeLiveLessons: { type: Boolean, default: false },
+    parentEmail: { type: String },
     status: { type: String, enum: ['Active', 'Inactive'], default: 'Active' },
     profileImage: { type: String },
     isVerified: { type: Boolean, default: false },

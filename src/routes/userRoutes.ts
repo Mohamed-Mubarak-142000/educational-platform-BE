@@ -6,6 +6,7 @@ import {
 	loginUser,
 	logoutUser,
 	getUserProfile,
+	updateUserProfile,
 	createTeacher,
 	createStudent,
 	getTeachers,
@@ -43,5 +44,6 @@ router.get('/students/:id', protect, admin, getStudentById);
 router.put('/students/:id', protect, admin, updateStudent);
 router.delete('/students/:id', protect, admin, deleteStudent);
 router.get('/profile', protect, getUserProfile);
+router.put('/profile', protect, updateUserProfile);
 
 export default router;
