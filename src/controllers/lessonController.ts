@@ -192,3 +192,46 @@ export const deleteLessonPart = async (req: Request, res: Response) => {
   }
 };
 
+// POST /lessons/migrate/youtube-urls
+export const migrateYouTubeUrls = async (_req: Request, res: Response) => {
+  try {
+    const normalizeYouTubeUrl = (url?: string) => {
+      if (!url) return '';
+      const trimmed = url.trim();
+      if (!trimmed) return '';
+      if (trimmed.includes('youtube.com/embed/')) return trimmed;
+      const match = trimmed.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+      if (match?.[1]) return `https://www.youtube.com/embed/${match[1]}`;
+      return trimmed;
+    };
+
+    const urlFilter = { $regex: 'youtube\\.com|youtu\\.be', $options: 'i' };
+
+    const lessons = await Lesson.find({ videoUrl: urlFilter });
+    let lessonUpdates = 0;
+    for (const lesson of lessons) {
+      const nextUrl = normalizeYouTubeUrl(lesson.videoUrl);
+      if (nextUrl && nextUrl !== lesson.videoUrl) {
+        lesson.videoUrl = nextUrl;
+        await lesson.save();
+        lessonUpdates += 1;
+      }
+    }
+
+    const parts = await LessonPart.find({ 'media.videoUrl': urlFilter });
+    let partUpdates = 0;
+    for (const part of parts) {
+      const nextUrl = normalizeYouTubeUrl(part.media?.videoUrl);
+      if (nextUrl && nextUrl !== part.media?.videoUrl) {
+        part.media = { ...(part.media || {}), videoUrl: nextUrl };
+        await part.save();
+        partUpdates += 1;
+      }
+    }
+
+    res.json({ message: 'YouTube URLs normalized.', lessonsUpdated: lessonUpdates, partsUpdated: partUpdates });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+

@@ -1,6 +1,11 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import User from '../models/User';
+import Subject from '../models/Subject';
+import Unit from '../models/Unit';
+import UnitEnrollment from '../models/UnitEnrollment';
+import TeacherSchedule from '../models/TeacherSchedule';
+import TeacherApplication from '../models/TeacherApplication';
 import generateToken from '../utils/generateToken';
 import sendEmail from '../utils/sendEmail';
 import { otpTemplate, resetPasswordTemplate, teacherInviteTemplate, studentInviteTemplate } from '../utils/emailTemplates';
@@ -401,7 +406,42 @@ export const getTeacherById = async (req: Request, res: Response) => {
       res.status(404).json({ message: 'Teacher not found' });
       return;
     }
-    res.json(teacher);
+    const subjects = await Subject.find({ teacherId: teacher._id }).sort({ createdAt: 1 });
+    const subjectDetails = await Promise.all(
+      subjects.map(async (subject) => {
+        const units = await Unit.find({ subjectId: subject._id }).select('_id');
+        const unitIds = units.map((unit) => unit._id);
+        const studentIds = unitIds.length > 0
+          ? await UnitEnrollment.distinct('studentId', { unitId: { $in: unitIds } })
+          : [];
+        return {
+          ...subject.toObject(),
+          studentCount: studentIds.length,
+        };
+      })
+    );
+
+    const allUnitIds = subjectDetails.length > 0
+      ? await Unit.find({ subjectId: { $in: subjectDetails.map((s) => s._id) } }).distinct('_id')
+      : [];
+    const totalStudentCount = allUnitIds.length > 0
+      ? (await UnitEnrollment.distinct('studentId', { unitId: { $in: allUnitIds } })).length
+      : 0;
+
+    const schedules = await TeacherSchedule.find({ teacherId: teacher._id })
+      .populate('subjectId', 'name')
+      .sort({ day: 1, startTime: 1 });
+
+    const application = await TeacherApplication.findOne({ email: teacher.email }).sort({ createdAt: -1 });
+
+    res.json({
+      ...teacher.toObject(),
+      subjects: subjectDetails,
+      totalStudentCount,
+      schedules,
+      application,
+      cvUrl: application?.cvUrl || null,
+    });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -476,7 +516,24 @@ export const getStudentById = async (req: Request, res: Response) => {
       res.status(404).json({ message: 'Student not found' });
       return;
     }
-    res.json(student);
+    const enrollments = await UnitEnrollment.find({ studentId: student._id }).select('unitId');
+    const unitIds = enrollments.map((enrollment) => enrollment.unitId);
+    const units = unitIds.length > 0
+      ? await Unit.find({ _id: { $in: unitIds } }).select('subjectId')
+      : [];
+    const subjectIds = Array.from(
+      new Set(units.map((unit) => String(unit.subjectId)))
+    );
+    const subscribedSubjects = subjectIds.length > 0
+      ? await Subject.find({ _id: { $in: subjectIds } })
+        .populate('teacherId', 'name')
+        .sort({ createdAt: 1 })
+      : [];
+
+    res.json({
+      ...student.toObject(),
+      subscribedSubjects,
+    });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

@@ -9,7 +9,7 @@ const storage = new CloudinaryStorage({
     const filenameBase = file.originalname.split('.').slice(0, -1).join('.') || file.originalname;
     return {
       folder: 'logistiq/products',
-      allowed_formats: ['jpg', 'png', 'jpeg', 'webp', 'mp4', 'mov', 'webm', 'mp3', 'wav', 'm4a', 'pdf'],
+      allowed_formats: ['jpg', 'png', 'jpeg', 'webp', 'mp4', 'mov', 'webm', 'mp3', 'wav', 'm4a', 'pdf', 'glb', 'gltf', 'obj', 'fbx'],
       public_id: `${Date.now()}-${filenameBase}`,
       resource_type: 'auto',
     };
