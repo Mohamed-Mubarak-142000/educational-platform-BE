@@ -12,6 +12,7 @@ import {
   getPartsByLesson,
   createLessonPart,
   deleteLessonPart,
+  migrateYouTubeUrls,
 } from '../controllers/lessonController';
 import { protect, teacher } from '../middlewares/authMiddleware';
 
@@ -26,6 +27,9 @@ router.route('/').post(protect, teacher, createLesson);
 
 // Progress
 router.route('/progress').post(protect, updateProgress);
+
+// One-time migration for YouTube URLs
+router.route('/migrate/youtube-urls').post(protect, teacher, migrateYouTubeUrls);
 
 // Lesson parts (delete by part id — must come before /:id)
 router.route('/parts/:id').delete(protect, teacher, deleteLessonPart);
