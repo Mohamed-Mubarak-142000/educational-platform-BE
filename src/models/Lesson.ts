@@ -1,6 +1,8 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
 export interface ILesson extends Document {
+  courseId?: mongoose.Types.ObjectId;
+  teacherId?: mongoose.Types.ObjectId;
   sectionId?: mongoose.Types.ObjectId;
   unitId?: mongoose.Types.ObjectId;
   title: string;
@@ -17,6 +19,8 @@ export interface ILesson extends Document {
 
 const LessonSchema = new Schema<ILesson>(
   {
+    courseId: { type: Schema.Types.ObjectId, ref: 'Course' },
+    teacherId: { type: Schema.Types.ObjectId, ref: 'User' },
     sectionId: { type: Schema.Types.ObjectId, ref: 'Section' },
     unitId: { type: Schema.Types.ObjectId, ref: 'Unit' },
     title: { type: String, required: true },

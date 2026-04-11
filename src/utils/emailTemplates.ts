@@ -73,6 +73,84 @@ export const teacherInviteTemplate = (name: string, email: string, tempPassword:
   return { subject: subject_, text, html };
 };
 
+export const teacherEvaluationScheduledTemplate = (name: string, zoomLink: string): EmailTemplate => {
+  const subject = 'Your teacher application is under evaluation - Academix';
+  const text = `Hello ${name},\n\nYour teacher application is now under evaluation. Please join the Zoom meeting at the scheduled time using the link below:\n${zoomLink}\n\nNext steps:\n- Join the Zoom call at the agreed time\n- Prepare to discuss your teaching background and experience\n\nIf you have questions, reply to this email or contact support.\n\nThank you,\nThe Academix Team`;
+  const html = wrapHtml(
+    subject,
+    `<h2 style="margin:0 0 12px;">Application under evaluation</h2>
+     <p style="margin:0 0 12px;">Hello ${name},</p>
+     <p style="margin:0 0 12px;">Your teacher application status is now <strong>Under Evaluation</strong>.</p>
+     <p style="margin:0 0 8px;">Please join the Zoom meeting at the scheduled time using the link below:</p>
+     <p style="margin:0 0 16px;"><a href="${zoomLink}" style="color:#2563eb;">${zoomLink}</a></p>
+     <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;margin:12px 0;">
+       <p style="margin:0 0 6px;font-weight:600;">Next steps</p>
+       <ul style="margin:0;padding-left:18px;">
+         <li>Join the Zoom call at the agreed time.</li>
+         <li>Prepare to discuss your teaching background and experience.</li>
+       </ul>
+     </div>
+     <p style="margin:0;">If you have questions, reply to this email or contact support.</p>`
+  );
+  return { subject, text, html };
+};
+
+export const teacherApplicationRejectedTemplate = (name: string, rejectionReason?: string): EmailTemplate => {
+  const subject = 'Your teacher application update - Academix';
+  const reasonLine = rejectionReason ? `Reason: ${rejectionReason}\n\n` : '';
+  const text = `Hello ${name},\n\nYour teacher application status is now Rejected.\n\n${reasonLine}Next steps:\n- You may reapply in the future if your situation changes\n- If you have questions, reply to this email\n\nThank you for your interest,\nThe Academix Team`;
+  const html = wrapHtml(
+    subject,
+    `<h2 style="margin:0 0 12px;">Application update</h2>
+     <p style="margin:0 0 12px;">Hello ${name},</p>
+     <p style="margin:0 0 12px;">Your teacher application status is now <strong>Rejected</strong>.</p>
+     ${rejectionReason ? `<p style="margin:0 0 12px;"><strong>Reason:</strong> ${rejectionReason}</p>` : ''}
+     <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;margin:12px 0;">
+       <p style="margin:0 0 6px;font-weight:600;">Next steps</p>
+       <ul style="margin:0;padding-left:18px;">
+         <li>You may reapply in the future if your situation changes.</li>
+         <li>If you have questions, reply to this email.</li>
+       </ul>
+     </div>
+     <p style="margin:0;">Thank you for your interest.</p>`
+  );
+  return { subject, text, html };
+};
+
+export const teacherApplicationAcceptedTemplate = (
+  name: string,
+  email: string,
+  tempPassword: string,
+  subjectName?: string
+): EmailTemplate => {
+  const subject = 'Your teacher application was accepted - Academix';
+  const text = `Hello ${name},\n\nYour teacher application status is now Accepted. Your teacher account has been created.\n\nLogin email: ${email}\nTemporary password: ${tempPassword}${subjectName ? `\nAssigned subject: ${subjectName}` : ''}\n\nNext steps:\n- Log in and change your password immediately\n- Complete your profile and availability\n\nWelcome to Academix!\nThe Academix Team`;
+  const html = wrapHtml(
+    subject,
+    `<h2 style="margin:0 0 12px;">Application accepted</h2>
+     <p style="margin:0 0 12px;">Hello ${name},</p>
+     <p style="margin:0 0 12px;">Your teacher application status is now <strong>Accepted</strong>.</p>
+     <p style="margin:0 0 12px;">Your teacher account has been created with the credentials below:</p>
+     <div style="background:#f8faff;border:1px solid #bfdbfe;border-radius:10px;padding:16px 20px;margin:16px 0;">
+       <p style="margin:0 0 8px;font-size:13px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Account Details</p>
+       <table style="width:100%;border-collapse:collapse;">
+         <tr><td style="padding:5px 0;color:#64748b;font-size:14px;width:120px;">Email</td><td style="padding:5px 0;color:#1e293b;font-size:14px;font-weight:600;">${email}</td></tr>
+         <tr><td style="padding:5px 0;color:#64748b;font-size:14px;">Password</td><td style="padding:5px 0;color:#1e293b;font-size:14px;font-weight:600;letter-spacing:1px;">${tempPassword}</td></tr>
+         ${subjectName ? `<tr><td style="padding:5px 0;color:#64748b;font-size:14px;">Subject</td><td style="padding:5px 0;color:#1e293b;font-size:14px;font-weight:600;">${subjectName}</td></tr>` : ''}
+       </table>
+     </div>
+     <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;margin:12px 0;">
+       <p style="margin:0 0 6px;font-weight:600;">Next steps</p>
+       <ul style="margin:0;padding-left:18px;">
+         <li>Log in and change your password immediately.</li>
+         <li>Complete your profile and availability.</li>
+       </ul>
+     </div>
+     <p style="margin:0;">Welcome to Academix!</p>`
+  );
+  return { subject, text, html };
+};
+
 export const studentInviteTemplate = (name: string, email: string, tempPassword: string): EmailTemplate => {
   const subject = 'Your student account is ready - Academix';
   const text = `Hello ${name},\n\nAn admin created your student account.\n\nLogin email: ${email}\nTemporary password: ${tempPassword}\n\nPlease log in and change your password immediately.`;
@@ -100,6 +178,20 @@ export const resetPasswordTemplate = (name: string, resetUrl: string): EmailTemp
      <p style="margin:0 0 16px;">You requested a password reset. Click the button below to set a new password. This link expires in 10 minutes.</p>
      <p style="margin:0 0 16px;"><a href="${resetUrl}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:8px;">Reset password</a></p>
      <p style="margin:0;">If you did not request this, you can ignore this email.</p>`
+  );
+  return { subject, text, html };
+};
+
+export const teacherApplicationReceivedTemplate = (name: string): EmailTemplate => {
+  const subject = 'We received your teacher application - Academix';
+  const text = `Hello ${name},\n\nYour request has been submitted successfully and is under review. You will receive an update once it has been processed.\n\nThank you,\nThe Academix Team`;
+  const html = wrapHtml(
+    subject,
+    `<h2 style="margin:0 0 12px;">Application received</h2>
+     <p style="margin:0 0 12px;">Hello ${name},</p>
+     <p style="margin:0 0 12px;">Your request has been submitted successfully and is under review.</p>
+     <p style="margin:0 0 16px;">You will receive an update once it has been processed.</p>
+     <p style="margin:0;">Thank you,<br />The Academix Team</p>`
   );
   return { subject, text, html };
 };

@@ -2,6 +2,7 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
 
 export interface IStage extends Document {
   name: string;
+  nameAr?: string;
   description: string;
   icon: string;
   color: string;
@@ -11,6 +12,7 @@ export interface IStage extends Document {
 const StageSchema = new Schema<IStage>(
   {
     name: { type: String, required: true },
+    nameAr: { type: String, default: '' },
     description: { type: String, default: '' },
     icon: { type: String, default: '📚' },
     color: { type: String, default: 'blue' },

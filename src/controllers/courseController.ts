@@ -1,10 +1,20 @@
 import { Request, Response } from 'express';
 import Course from '../models/Course';
+import Stage from '../models/Stage';
+import Subject from '../models/Subject';
 import Enrollment from '../models/Enrollment';
 
 export const getCourses = async (req: Request, res: Response) => {
   try {
-    const courses = await Course.find({}).populate('teacherId', 'name email');
+    const filter: Record<string, string> = {};
+    if (typeof req.query.teacherId === 'string') filter.teacherId = req.query.teacherId;
+    if (typeof req.query.stageId === 'string') filter.stageId = req.query.stageId;
+    if (typeof req.query.subjectId === 'string') filter.subjectId = req.query.subjectId;
+
+    const courses = await Course.find(filter)
+      .populate('teacherId', 'name email')
+      .populate('stageId', 'name')
+      .populate('subjectId', 'name');
     res.json(courses);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -13,7 +23,10 @@ export const getCourses = async (req: Request, res: Response) => {
 
 export const getCourseById = async (req: Request, res: Response) => {
   try {
-    const course = await Course.findById(req.params.id).populate('teacherId', 'name email');
+    const course = await Course.findById(req.params.id)
+      .populate('teacherId', 'name email')
+      .populate('stageId', 'name')
+      .populate('subjectId', 'name');
     if (course) {
       res.json(course);
     } else {
@@ -26,13 +39,55 @@ export const getCourseById = async (req: Request, res: Response) => {
 
 export const createCourse = async (req: any, res: Response) => {
   try {
-    const { title, description, price, thumbnail } = req.body;
+    const { title, description, price, thumbnail, stageId, subjectId } = req.body;
+    if (!stageId || !subjectId) {
+      res.status(400).json({ message: 'stageId and subjectId are required' });
+      return;
+    }
+
+    // For teachers (not admins), verify the stage/subject is in their assigned list
+    if (req.user.role === 'Teacher') {
+      const teacherStageIds = (req.user.stageIds || []).map(String);
+      const teacherSubjectIds = (req.user.subjectIds || []).map(String);
+
+      if (teacherStageIds.length > 0 && !teacherStageIds.includes(String(stageId))) {
+        res.status(403).json({ message: 'You are not assigned to teach in this stage' });
+        return;
+      }
+      if (teacherSubjectIds.length > 0 && !teacherSubjectIds.includes(String(subjectId))) {
+        res.status(403).json({ message: 'You are not assigned to teach this subject' });
+        return;
+      }
+    }
+
+    const [stage, subject] = await Promise.all([
+      Stage.findById(stageId),
+      Subject.findById(subjectId),
+    ]);
+
+    if (!stage) {
+      res.status(400).json({ message: 'Stage not found' });
+      return;
+    }
+
+    if (!subject) {
+      res.status(400).json({ message: 'Subject not found' });
+      return;
+    }
+
+    if (String(subject.stageId) !== String(stageId)) {
+      res.status(400).json({ message: 'Subject does not belong to the provided stage' });
+      return;
+    }
+
     const course = new Course({
       title,
       description,
       price,
       thumbnail,
       teacherId: req.user._id,
+      stageId,
+      subjectId,
     });
     const createdCourse = await course.save();
     res.status(201).json(createdCourse);
@@ -54,12 +109,29 @@ export const updateCourse = async (req: any, res: Response) => {
       return;
     }
 
-    const { title, description, price, thumbnail, teacherId } = req.body;
+    const { title, description, price, thumbnail, teacherId, stageId, subjectId } = req.body;
     if (title !== undefined) course.title = title;
     if (description !== undefined) course.description = description;
     if (price !== undefined) course.price = price;
     if (thumbnail !== undefined) course.thumbnail = thumbnail;
+
+    if (stageId !== undefined) course.stageId = stageId;
+    if (subjectId !== undefined) course.subjectId = subjectId;
     if (teacherId !== undefined && req.user.role === 'Admin') course.teacherId = teacherId;
+
+    if (stageId !== undefined || subjectId !== undefined) {
+      const nextStageId = stageId ?? course.stageId;
+      const nextSubjectId = subjectId ?? course.subjectId;
+      const subject = await Subject.findById(nextSubjectId);
+      if (!subject) {
+        res.status(400).json({ message: 'Subject not found' });
+        return;
+      }
+      if (String(subject.stageId) !== String(nextStageId)) {
+        res.status(400).json({ message: 'Subject does not belong to the provided stage' });
+        return;
+      }
+    }
 
     const updated = await course.save();
     res.json(updated);
@@ -129,7 +201,15 @@ export const getEnrolledCourses = async (req: any, res: Response) => {
 // @access  Private
 export const getCoursesByTeacher = async (req: Request, res: Response) => {
   try {
-    const courses = await Course.find({ teacherId: req.params.teacherId }).populate('teacherId', 'name email subject');
+    const teacherId = String(req.params.teacherId);
+    const filter: Record<string, string> = { teacherId };
+    if (typeof req.query.stageId === 'string') filter.stageId = req.query.stageId;
+    if (typeof req.query.subjectId === 'string') filter.subjectId = req.query.subjectId;
+
+    const courses = await Course.find(filter)
+      .populate('teacherId', 'name email subject')
+      .populate('stageId', 'name')
+      .populate('subjectId', 'name');
     res.json(courses);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -141,7 +221,13 @@ export const getCoursesByTeacher = async (req: Request, res: Response) => {
 // @access  Private/Teacher
 export const getMyCourses = async (req: any, res: Response) => {
   try {
-    const courses = await Course.find({ teacherId: req.user._id });
+    const filter: Record<string, string> = { teacherId: req.user._id };
+    if (typeof req.query.stageId === 'string') filter.stageId = req.query.stageId;
+    if (typeof req.query.subjectId === 'string') filter.subjectId = req.query.subjectId;
+
+    const courses = await Course.find(filter)
+      .populate('stageId', 'name')
+      .populate('subjectId', 'name');
     res.json(courses);
   } catch (error: any) {
     res.status(500).json({ message: error.message });

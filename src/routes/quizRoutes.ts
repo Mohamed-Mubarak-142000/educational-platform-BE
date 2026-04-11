@@ -9,6 +9,7 @@ import {
   getQuizzes,
   getQuizResults,
   getQuizzesByCourse,
+  getMyQuizzes,
 } from '../controllers/quizController';
 import {
   getQuizByAttached,
@@ -38,6 +39,7 @@ router.route('/questions').post(protect, teacher, addQuestion);
 router.route('/questions/:id').put(protect, teacher, updateMCQQuestion).delete(protect, teacher, deleteMCQQuestion);
 router.route('/submit').post(protect, submitQuiz);
 router.route('/course/:courseId').get(protect, getQuizzesByCourse);
+router.route('/my').get(protect, teacher, getMyQuizzes);
 
 // ── Exam quiz routes ──────────────────────────────────────────────
 router.route('/').get(protect, getQuizzes).post(protect, teacher, createQuiz);

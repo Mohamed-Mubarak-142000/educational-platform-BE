@@ -211,8 +211,8 @@ export const getUserProfile = async (req: any, res: Response) => {
         profileImage: user.profileImage,
         status: user.status,
         isVerified: user.isVerified,
-        mustChangePassword: user.mustChangePassword,
-      });
+        mustChangePassword: user.mustChangePassword,      stageIds: (user as any).stageIds,
+      subjectIds: (user as any).subjectIds,      });
     } else {
       res.status(404).json({ message: 'User not found' });
     }
@@ -258,7 +258,7 @@ export const updateUserProfile = async (req: any, res: Response) => {
 // @access  Private/Admin
 export const createTeacher = async (req: Request, res: Response) => {
   try {
-    const { name, email, phone, subject, stageId, status } = req.body;
+    const { name, email, phone, subject, stageId, stageIds, subjectIds, status, profileImage, cvUrl, availableDays, availableHours } = req.body;
 
     const userExists = await User.findOne({ email });
     if (userExists) {
@@ -278,7 +278,13 @@ export const createTeacher = async (req: Request, res: Response) => {
       phone,
       subject,
       stageId: stageId || undefined,
+      stageIds: Array.isArray(stageIds) ? stageIds : (stageId ? [stageId] : []),
+      subjectIds: Array.isArray(subjectIds) ? subjectIds : [],
       status: status || 'Active',
+      profileImage: profileImage || undefined,
+      cvUrl: cvUrl || undefined,
+      availableDays: Array.isArray(availableDays) ? availableDays : [],
+      availableHours: availableHours || {},
     });
 
     const template = teacherInviteTemplate(teacher.name, teacher.email, tempPassword, teacher.subject);
@@ -301,7 +307,13 @@ export const createTeacher = async (req: Request, res: Response) => {
       phone: teacher.phone,
       subject: teacher.subject,
       stageId: teacher.stageId,
+      stageIds: teacher.stageIds,
+      subjectIds: teacher.subjectIds,
       status: teacher.status,
+      profileImage: teacher.profileImage,
+      cvUrl: teacher.cvUrl,
+      availableDays: teacher.availableDays,
+      availableHours: teacher.toObject({ flattenMaps: true }).availableHours,
       mustChangePassword: teacher.mustChangePassword,
     });
   } catch (error: any) {
@@ -376,6 +388,13 @@ const applyUserUpdates = (user: any, updates: any) => {
   if (updates.subject !== undefined) user.subject = updates.subject;
   if (updates.status !== undefined) user.status = updates.status;
   if (updates.profileImage !== undefined) user.profileImage = updates.profileImage;
+  if (updates.cvUrl !== undefined) user.cvUrl = updates.cvUrl;
+  if (updates.bio !== undefined) user.bio = updates.bio;
+  if (updates.availableDays !== undefined) user.availableDays = updates.availableDays;
+  if (updates.availableHours !== undefined) user.availableHours = updates.availableHours;
+  // Teacher assignment fields
+  if (updates.stageIds !== undefined) user.stageIds = Array.isArray(updates.stageIds) ? updates.stageIds : [];
+  if (updates.subjectIds !== undefined) user.subjectIds = Array.isArray(updates.subjectIds) ? updates.subjectIds : [];
   // Student-specific fields
   if (updates.stageId !== undefined) user.stageId = updates.stageId || undefined;
   if (updates.subscribeLiveLessons !== undefined) {
@@ -396,12 +415,85 @@ export const getTeachers = async (_req: Request, res: Response) => {
   }
 };
 
+// @desc    Get teachers directory (student-facing)
+// @route   GET /api/users/teachers-directory
+// @access  Private
+export const getTeachersDirectory = async (_req: Request, res: Response) => {
+  try {
+    const teachers = await User.find({ role: 'Teacher', status: 'Active' })
+      .select('_id name subject stageId stageIds subjectIds profileImage')
+      .populate('stageId', 'name')
+      .populate('stageIds', 'name')
+      .populate('subjectIds', 'name');
+    res.json(teachers);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Get teacher profile (student-facing)
+// @route   GET /api/users/teachers-directory/:id
+// @access  Private
+export const getTeacherDirectoryById = async (req: Request, res: Response) => {
+  try {
+    const teacher = await User.findOne({ _id: req.params.id, role: 'Teacher', status: 'Active' })
+      .select('_id name subject stageId stageIds subjectIds profileImage')
+      .populate('stageId', 'name')
+      .populate('stageIds', 'name')
+      .populate('subjectIds', 'name');
+
+    if (!teacher) {
+      res.status(404).json({ message: 'Teacher not found' });
+      return;
+    }
+
+    res.json(teacher);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Get students enrolled in the logged-in teacher's courses
+// @route   GET /api/users/my-students
+// @access  Private/Teacher
+export const getMyStudents = async (req: any, res: Response) => {
+  try {
+    const Course = (await import('../models/Course')).default;
+    const Enrollment = (await import('../models/Enrollment')).default;
+
+    const courses = await Course.find({ teacherId: req.user._id }).select('_id');
+    const courseIds = courses.map((c: any) => c._id);
+
+    const enrollments = await Enrollment.find({ courseId: { $in: courseIds } })
+      .populate('studentId', '_id name email phone profileImage stageId status createdAt')
+      .lean();
+
+    const uniqueStudentsMap = new Map<string, any>();
+    for (const enrollment of enrollments) {
+      const student = enrollment.studentId as any;
+      if (student && student._id) {
+        const key = String(student._id);
+        if (!uniqueStudentsMap.has(key)) {
+          uniqueStudentsMap.set(key, student);
+        }
+      }
+    }
+
+    res.json(Array.from(uniqueStudentsMap.values()));
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Get teacher by id
 // @route   GET /api/users/teachers/:id
 // @access  Private/Admin
 export const getTeacherById = async (req: Request, res: Response) => {
   try {
-    const teacher = await User.findOne({ _id: req.params.id, role: 'Teacher' }).select('-password');
+    const teacher = await User.findOne({ _id: req.params.id, role: 'Teacher' })
+      .select('-password')
+      .populate('stageIds', 'name nameAr icon color')
+      .populate('subjectIds', 'name nameAr icon color description');
     if (!teacher) {
       res.status(404).json({ message: 'Teacher not found' });
       return;
@@ -434,13 +526,37 @@ export const getTeacherById = async (req: Request, res: Response) => {
 
     const application = await TeacherApplication.findOne({ email: teacher.email }).sort({ createdAt: -1 });
 
+    const teacherObj = teacher.toObject({ flattenMaps: true });
+
+    // After flattenMaps, availableHours is a plain object at runtime (not a Map)
+    const availableHoursRaw = teacherObj.availableHours as unknown as Record<string, { start?: string; end?: string }> | undefined;
+
+    // Fallback: if teacher user record has empty availableHours/availableDays, use application data
+    const resolvedAvailableHours: Record<string, { start?: string; end?: string }> =
+      availableHoursRaw && Object.keys(availableHoursRaw).length > 0
+        ? availableHoursRaw
+        : application?.availableHours != null
+          ? (application.availableHours instanceof Map
+              ? Object.fromEntries(application.availableHours)
+              : (application.availableHours as unknown as Record<string, { start?: string; end?: string }>))
+          : {};
+
+    const resolvedAvailableDays: string[] =
+      Array.isArray(teacherObj.availableDays) && teacherObj.availableDays.length > 0
+        ? teacherObj.availableDays
+        : Array.isArray(application?.availableDays) && application.availableDays.length > 0
+          ? application.availableDays
+          : [];
+
     res.json({
-      ...teacher.toObject(),
+      ...teacherObj,
+      availableHours: resolvedAvailableHours,
+      availableDays: resolvedAvailableDays,
       subjects: subjectDetails,
       totalStudentCount,
       schedules,
       application,
-      cvUrl: application?.cvUrl || null,
+      cvUrl: teacherObj.cvUrl || application?.cvUrl || null,
     });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -459,18 +575,24 @@ export const updateTeacher = async (req: Request, res: Response) => {
     }
 
     applyUserUpdates(teacher, req.body);
-    if (req.body.stageId !== undefined) teacher.stageId = req.body.stageId || undefined;
     const updated = await teacher.save();
+    const updatedObj = updated.toObject({ flattenMaps: true });
     res.json({
-      _id: updated._id,
-      name: updated.name,
-      email: updated.email,
-      role: updated.role,
-      phone: updated.phone,
-      subject: updated.subject,
-      stageId: updated.stageId,
-      status: updated.status,
-      profileImage: updated.profileImage,
+      _id: updatedObj._id,
+      name: updatedObj.name,
+      email: updatedObj.email,
+      role: updatedObj.role,
+      phone: updatedObj.phone,
+      subject: updatedObj.subject,
+      stageId: updatedObj.stageId,
+      stageIds: updatedObj.stageIds,
+      subjectIds: updatedObj.subjectIds,
+      bio: updatedObj.bio,
+      status: updatedObj.status,
+      profileImage: updatedObj.profileImage,
+      cvUrl: updatedObj.cvUrl,
+      availableDays: updatedObj.availableDays,
+      availableHours: updatedObj.availableHours,
     });
   } catch (error: any) {
     res.status(500).json({ message: error.message });

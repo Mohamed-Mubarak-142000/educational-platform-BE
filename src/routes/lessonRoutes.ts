@@ -3,6 +3,7 @@ import {
   createSection,
   getSections,
   createLesson,
+  getLessonsByCourse,
   getLessons,
   updateLesson,
   deleteLesson,
@@ -24,6 +25,9 @@ router.route('/sections/:courseId').get(getSections);
 
 // Section-based lesson create
 router.route('/').post(protect, teacher, createLesson);
+
+// Course-based lesson list
+router.route('/course/:courseId').get(getLessonsByCourse);
 
 // Progress
 router.route('/progress').post(protect, updateProgress);
