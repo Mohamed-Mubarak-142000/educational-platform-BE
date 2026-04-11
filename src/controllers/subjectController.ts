@@ -28,10 +28,11 @@ export const getSubjectById = async (req: Request, res: Response) => {
 
 export const createSubject = async (req: Request, res: Response) => {
   try {
-    const { stageId, name, description, color, icon, teacherId } = req.body;
+    const { stageId, name, nameAr, description, color, icon, teacherId } = req.body;
     const subject = await Subject.create({
       stageId,
       name,
+      nameAr: nameAr || '',
       description: description || '',
       color: color || 'blue',
       icon: icon || '📚',
@@ -51,8 +52,9 @@ export const updateSubject = async (req: Request, res: Response) => {
       res.status(404).json({ message: 'Subject not found' });
       return;
     }
-    const { name, description, color, icon, teacherId, stageId } = req.body;
+    const { name, nameAr, description, color, icon, teacherId, stageId } = req.body;
     if (name !== undefined) subject.name = name;
+    if (nameAr !== undefined) subject.nameAr = nameAr;
     if (description !== undefined) subject.description = description;
     if (color !== undefined) subject.color = color;
     if (icon !== undefined) subject.icon = icon;

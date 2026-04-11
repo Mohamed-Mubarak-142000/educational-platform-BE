@@ -147,3 +147,34 @@ export const getQuizzesByCourse = async (req: Request, res: Response) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// @desc    Get quizzes for current teacher's courses/lessons
+// @route   GET /api/quizzes/my
+// @access  Private/Teacher
+export const getMyQuizzes = async (req: any, res: Response) => {
+  try {
+    const Course = (await import('../models/Course')).default;
+
+    const courses = await Course.find({ teacherId: req.user._id }).select('_id');
+    const courseIds = courses.map((c: any) => c._id);
+
+    const sections = await Section.find({ courseId: { $in: courseIds } }).select('_id');
+    const sectionIds = sections.map((s) => s._id);
+
+    const lessons = await Lesson.find({
+      $or: [
+        { sectionId: { $in: sectionIds } },
+        { courseId: { $in: courseIds } },
+      ],
+    }).select('_id');
+    const lessonIds = lessons.map((l) => l._id);
+
+    const quizzes = await Quiz.find({ lessonId: { $in: lessonIds } })
+      .populate('lessonId', 'title')
+      .sort({ createdAt: -1 });
+
+    res.json(quizzes);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};

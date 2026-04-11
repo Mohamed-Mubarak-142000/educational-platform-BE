@@ -3,6 +3,7 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
 export interface ISubject extends Document {
   stageId: mongoose.Types.ObjectId;
   name: string;
+  nameAr?: string;
   description: string;
   color: string;
   icon: string;
@@ -13,6 +14,7 @@ const SubjectSchema = new Schema<ISubject>(
   {
     stageId: { type: Schema.Types.ObjectId, ref: 'Stage', required: true },
     name: { type: String, required: true },
+    nameAr: { type: String, default: '' },
     description: { type: String, default: '' },
     color: { type: String, default: 'blue' },
     icon: { type: String, default: '📚' },

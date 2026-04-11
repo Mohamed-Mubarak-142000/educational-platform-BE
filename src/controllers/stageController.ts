@@ -26,10 +26,11 @@ export const getStageById = async (req: Request, res: Response) => {
 
 export const createStage = async (req: Request, res: Response) => {
   try {
-    const { name, description, icon, color, order } = req.body;
+    const { name, nameAr, description, icon, color, order } = req.body;
     const count = await Stage.countDocuments();
     const stage = await Stage.create({
       name,
+      nameAr: nameAr || '',
       description: description || '',
       icon: icon || '📚',
       color: color || 'blue',
@@ -48,8 +49,9 @@ export const updateStage = async (req: Request, res: Response) => {
       res.status(404).json({ message: 'Stage not found' });
       return;
     }
-    const { name, description, icon, color, order } = req.body;
+    const { name, nameAr, description, icon, color, order } = req.body;
     if (name !== undefined) stage.name = name;
+    if (nameAr !== undefined) stage.nameAr = nameAr;
     if (description !== undefined) stage.description = description;
     if (icon !== undefined) stage.icon = icon;
     if (color !== undefined) stage.color = color;

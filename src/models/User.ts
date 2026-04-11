@@ -8,7 +8,13 @@ export interface IUser extends Document {
   role: 'Student' | 'Teacher' | 'Admin';
   phone?: string;
   subject?: string;
-  stageId?: mongoose.Types.ObjectId;
+  stageId?: mongoose.Types.ObjectId;        // kept for Students
+  stageIds?: mongoose.Types.ObjectId[];     // Teacher: assigned stages
+  subjectIds?: mongoose.Types.ObjectId[];   // Teacher: assigned subjects
+  cvUrl?: string;
+  bio?: string;
+  availableDays?: string[];
+  availableHours?: Map<string, { start?: string; end?: string }>;
   subscribeLiveLessons?: boolean;
   parentEmail?: string;
   status?: 'Active' | 'Inactive';
@@ -31,7 +37,20 @@ const userSchema = new Schema<IUser>(
     role: { type: String, enum: ['Student', 'Teacher', 'Admin'], default: 'Student' },
     phone: { type: String },
     subject: { type: String },
-    stageId: { type: Schema.Types.ObjectId, ref: 'Stage' },
+    stageId: { type: Schema.Types.ObjectId, ref: 'Stage' },       // Student stage
+    stageIds: [{ type: Schema.Types.ObjectId, ref: 'Stage' }],   // Teacher assigned stages
+    subjectIds: [{ type: Schema.Types.ObjectId, ref: 'Subject' }], // Teacher assigned subjects
+    cvUrl: { type: String },
+    bio: { type: String, default: '' },
+    availableDays: [{
+      type: String,
+      enum: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+    }],
+    availableHours: {
+      type: Map,
+      of: new Schema({ start: String, end: String }, { _id: false }),
+      default: {},
+    },
     subscribeLiveLessons: { type: Boolean, default: false },
     parentEmail: { type: String },
     status: { type: String, enum: ['Active', 'Inactive'], default: 'Active' },
@@ -44,7 +63,7 @@ const userSchema = new Schema<IUser>(
     resetPasswordExpires: { type: Date },
     mustChangePassword: { type: Boolean, default: false },
   },
-  { timestamps: true }
+  { timestamps: true, toJSON: { flattenMaps: true }, toObject: { flattenMaps: true } }
 );
 
 userSchema.methods.matchPassword = async function (enteredPassword: string) {
