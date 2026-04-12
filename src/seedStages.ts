@@ -92,13 +92,13 @@ const seed = async () => {
     }
 
     for (const subjectData of subjects) {
-      const existing = await Subject.findOne({ name: subjectData.name, stageId: stage._id });
+      // Subject is now stage-agnostic; find by name only
+      const existing = await Subject.findOne({ name: subjectData.name });
       if (!existing) {
-        await Subject.create({ ...subjectData, stageId: stage._id });
+        await Subject.create(subjectData);
         subjectsCreated++;
         console.log(`       ✔  Subject created: ${subjectData.name}`);
       } else {
-        // Patch nameAr on existing subjects that were seeded before bilingual support
         if (!existing.nameAr && subjectData.nameAr) {
           existing.nameAr = subjectData.nameAr;
           await existing.save();

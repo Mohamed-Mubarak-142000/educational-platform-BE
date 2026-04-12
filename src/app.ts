@@ -27,11 +27,15 @@ import subjectRoutes from './routes/subjectRoutes';
 import unitRoutes from './routes/unitRoutes';
 import teacherApplicationRoutes from './routes/teacherApplicationRoutes';
 import teacherScheduleRoutes from './routes/teacherScheduleRoutes';
+// New routes
+import gradeRoutes from './routes/gradeRoutes';
+import teacherAssignmentRoutes from './routes/teacherAssignmentRoutes';
+import progressRoutes from './routes/progressRoutes';
 
 // Use Routes here
 app.use('/api/users', userRoutes);
 app.use('/api/upload', uploadRoutes);
-app.use('/api/courses', courseRoutes);
+app.use('/api/courses', courseRoutes);       // legacy — keep during migration
 app.use('/api/lessons', lessonRoutes);
 app.use('/api/quizzes', quizRoutes);
 app.use('/api/discussions', discussionRoutes);
@@ -42,6 +46,10 @@ app.use('/api/subjects', subjectRoutes);
 app.use('/api/units', unitRoutes);
 app.use('/api/teacher-applications', teacherApplicationRoutes);
 app.use('/api/teacher-schedules', teacherScheduleRoutes);
+// New routes (generic multi-subject platform)
+app.use('/api/grades', gradeRoutes);
+app.use('/api/teacher-assignments', teacherAssignmentRoutes);
+app.use('/api/progress', progressRoutes);
 
 // Error Handling
 app.use(notFound);
