@@ -1,8 +1,8 @@
 /**
- * Stages & Subjects Seeder
+ * Stages & Grades Seeder
  *
- * Creates the three academic stages (Primary, Middle, Secondary) and
- * a set of biology subjects for each stage, if they do not already exist.
+ * Creates the three academic stages (Primary, Preparatory, Secondary) with their
+ * corresponding grades. Subjects are managed by admins through the UI.
  * Safe to re-run: uses findOne-or-create logic, never creates duplicates.
  *
  * Usage:
@@ -14,66 +14,66 @@ dotenv.config();
 
 import connectDB from './config/db';
 import Stage from './models/Stage';
-import Subject from './models/Subject';
+import Grade from './models/Grade';
 
 const STAGES_DATA = [
   {
-    name: 'Primary',
+    name: 'Primary Stage',
     nameAr: 'المرحلة الابتدائية',
     description: 'Foundation level education covering essential biology and life sciences.',
     icon: '🌱',
     color: 'emerald',
     order: 1,
-    subjects: [
-      { name: 'Introduction to Biology', nameAr: 'مقدمة في علم الأحياء', description: 'Basic concepts of living things and their environments.', icon: '🔬', color: 'emerald' },
-      { name: 'Plant Science', nameAr: 'علم النبات', description: 'Structure and functions of plants.', icon: '🌿', color: 'green' },
-      { name: 'Animal Science', nameAr: 'علم الحيوان', description: 'Diversity and characteristics of animals.', icon: '🐾', color: 'amber' },
-      { name: 'Human Body Basics', nameAr: 'أساسيات جسم الإنسان', description: 'Introduction to human anatomy and health.', icon: '🫀', color: 'rose' },
+    grades: [
+      { name: 'Grade 1', nameAr: 'الصف الأول الابتدائي', order: 1 },
+      { name: 'Grade 2', nameAr: 'الصف الثاني الابتدائي', order: 2 },
+      { name: 'Grade 3', nameAr: 'الصف الثالث الابتدائي', order: 3 },
+      { name: 'Grade 4', nameAr: 'الصف الرابع الابتدائي', order: 4 },
+      { name: 'Grade 5', nameAr: 'الصف الخامس الابتدائي', order: 5 },
+      { name: 'Grade 6', nameAr: 'الصف السادس الابتدائي', order: 6 },
     ],
   },
   {
-    name: 'Middle',
+    name: 'Preparatory Stage',
     nameAr: 'المرحلة الإعدادية',
     description: 'Intermediate biology building on core concepts with a broader scientific scope.',
     icon: '📖',
     color: 'blue',
     order: 2,
-    subjects: [
-      { name: 'Cell Biology', nameAr: 'علم الخلية', description: 'Structure and functions of cells.', icon: '🔬', color: 'blue' },
-      { name: 'Genetics', nameAr: 'علم الوراثة', description: 'Heredity, DNA, and genetic variation.', icon: '🧬', color: 'violet' },
-      { name: 'Ecology', nameAr: 'علم البيئة', description: 'Ecosystems, food chains, and environmental science.', icon: '🌍', color: 'emerald' },
-      { name: 'Microbiology', nameAr: 'علم الأحياء الدقيقة', description: 'Bacteria, viruses, and microorganisms.', icon: '🦠', color: 'cyan' },
-      { name: 'Human Physiology', nameAr: 'فسيولوجيا الإنسان', description: 'Systems of the human body and their functions.', icon: '🫁', color: 'rose' },
+    grades: [
+      { name: 'Grade 1', nameAr: 'الصف الأول الإعدادي', order: 1 },
+      { name: 'Grade 2', nameAr: 'الصف الثاني الإعدادي', order: 2 },
+      { name: 'Grade 3', nameAr: 'الصف الثالث الإعدادي', order: 3 },
     ],
   },
   {
-    name: 'Secondary',
+    name: 'Secondary Stage',
     nameAr: 'المرحلة الثانوية',
     description: 'Advanced biology for higher education preparation.',
     icon: '🎓',
     color: 'violet',
     order: 3,
-    subjects: [
-      { name: 'Molecular Biology', nameAr: 'علم الأحياء الجزيئي', description: 'Molecular mechanisms of biological activity.', icon: '🧪', color: 'violet' },
-      { name: 'Biotechnology', nameAr: 'التكنولوجيا الحيوية', description: 'Applied biology and genetic engineering.', icon: '🧬', color: 'blue' },
-      { name: 'Human Anatomy', nameAr: 'تشريح الإنسان', description: 'In-depth study of human body systems.', icon: '🫀', color: 'rose' },
-      { name: 'Evolutionary Biology', nameAr: 'علم الأحياء التطوري', description: 'Theory of evolution and natural selection.', icon: '🦴', color: 'amber' },
-      { name: 'Neuroscience', nameAr: 'علم الأعصاب', description: 'The nervous system and brain function.', icon: '🧠', color: 'indigo' },
-      { name: 'Immunology', nameAr: 'علم المناعة', description: 'The immune system and disease defense mechanisms.', icon: '🛡️', color: 'cyan' },
+    grades: [
+      { name: 'Grade 1', nameAr: 'الصف الأول الثانوي', order: 1 },
+      { name: 'Grade 2', nameAr: 'الصف الثاني الثانوي', order: 2 },
+      { name: 'Grade 3', nameAr: 'الصف الثالث الثانوي', order: 3 },
     ],
   },
 ];
 
 const seed = async () => {
   await connectDB();
-  console.log('\n🌱  Seeding stages and subjects...\n');
+  console.log('\n🌱  Seeding stages and grades...\n');
 
   let stagesCreated = 0;
-  let subjectsCreated = 0;
+  let gradesCreated = 0;
 
   for (const stageData of STAGES_DATA) {
-    const { subjects, ...stageFields } = stageData;
+    const { grades, ...stageFields } = stageData;
 
+    // ══════════════════════════════════════════════════════════════
+    // 1. Create or update Stage
+    // ══════════════════════════════════════════════════════════════
     let stage = await Stage.findOne({ name: stageFields.name });
 
     if (!stage) {
@@ -81,7 +81,7 @@ const seed = async () => {
       stagesCreated++;
       console.log(`  ✔  Stage created: ${stage.name}`);
     } else {
-      // Patch nameAr on existing stages that were seeded before bilingual support
+      // Patch nameAr on existing stages
       if (!stage.nameAr && stageFields.nameAr) {
         stage.nameAr = stageFields.nameAr;
         await stage.save();
@@ -91,26 +91,44 @@ const seed = async () => {
       }
     }
 
-    for (const subjectData of subjects) {
-      // Subject is now stage-agnostic; find by name only
-      const existing = await Subject.findOne({ name: subjectData.name });
-      if (!existing) {
-        await Subject.create(subjectData);
-        subjectsCreated++;
-        console.log(`       ✔  Subject created: ${subjectData.name}`);
+    // ══════════════════════════════════════════════════════════════
+    // 2. Create Grades for this Stage
+    // ══════════════════════════════════════════════════════════════
+    for (const gradeData of grades) {
+      let grade = await Grade.findOne({ 
+        stageId: stage._id, 
+        name: gradeData.name 
+      });
+
+      if (!grade) {
+        grade = await Grade.create({
+          stageId: stage._id,
+          name: gradeData.name,
+          nameAr: gradeData.nameAr,
+          order: gradeData.order,
+        });
+        gradesCreated++;
+        console.log(`       ✔  Grade created: ${grade.name}`);
       } else {
-        if (!existing.nameAr && subjectData.nameAr) {
-          existing.nameAr = subjectData.nameAr;
-          await existing.save();
-          console.log(`       ✔  Subject patched (nameAr): ${subjectData.name}`);
+        // Patch nameAr if missing
+        if (!grade.nameAr && gradeData.nameAr) {
+          grade.nameAr = gradeData.nameAr;
+          await grade.save();
+          console.log(`       ✔  Grade patched (nameAr): ${grade.name}`);
         } else {
-          console.log(`       –  Subject already exists: ${subjectData.name}`);
+          console.log(`       –  Grade already exists: ${grade.name}`);
         }
       }
     }
+
+    console.log(''); // blank line for readability
   }
 
-  console.log(`\n✔  Done! Created ${stagesCreated} stage(s) and ${subjectsCreated} subject(s).\n`);
+  console.log(`✔  Done!`);
+  console.log(`   Stages: ${stagesCreated} created`);
+  console.log(`   Grades: ${gradesCreated} created`);
+  console.log(`\n💡 Subjects can now be managed by admins through the UI.\n`);
+  
   process.exit(0);
 };
 

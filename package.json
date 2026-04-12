@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "seed": "ts-node src/seed.ts",
     "seed:admin": "ts-node src/seedAdmin.ts",
-    "seed:stages": "ts-node src/seedStages.ts"
+    "seed:stages": "ts-node src/seedStages.ts",
+    "seed:subjects": "ts-node src/seedSubjects.ts"
   },
   "keywords": [],
   "author": "",

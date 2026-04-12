@@ -12,6 +12,9 @@ export interface ISubject extends Document {
   descriptionAr: string;
   color: string;
   icon: string;
+  category?: string; // 'primary' | 'preparatory' | 'secondary-science' | 'secondary-literary' | 'general'
+  suggestedStages?: string[]; // Stage names this subject typically appears in
+  createdBy?: mongoose.Types.ObjectId; // Admin or Teacher who created this
 }
 
 const SubjectSchema = new Schema<ISubject>(
@@ -22,6 +25,9 @@ const SubjectSchema = new Schema<ISubject>(
     descriptionAr: { type: String, default: '' },
     color: { type: String, default: 'blue' },
     icon: { type: String, default: '📚' },
+    category: { type: String, default: 'general' },
+    suggestedStages: { type: [String], default: [] },
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true }
 );

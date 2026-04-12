@@ -8,6 +8,8 @@ import UnitAvailability from '../models/UnitAvailability';
 import UnitEnrollment from '../models/UnitEnrollment';
 import QuizGrade from '../models/QuizGrade';
 import Comment from '../models/Comment';
+import { AuthRequest } from '../middlewares/authMiddleware';
+import { attachCreator } from '../middlewares/rbacMiddleware';
 
 // ── Unit CRUD ─────────────────────────────────────────────────────
 
@@ -67,13 +69,15 @@ export const getLessonsByUnit = async (req: Request, res: Response) => {
   }
 };
 
-export const createLessonForUnit = async (req: Request, res: Response) => {
+export const createLessonForUnit = async (req: AuthRequest, res: Response) => {
   try {
     const unitId = req.params.unitId as string;
     const { title, description, videoUrl, pdfUrl, imageUrl, modelUrl, modelExplanation, audioUrl, order } = req.body;
     const count = await Lesson.countDocuments({ unitId });
-    const lesson = await Lesson.create({
+    
+    const lessonData = attachCreator(req, {
       unitId,
+      teacherId: req.user?._id, // Set teacherId for lessons
       title,
       description,
       videoUrl,
@@ -84,6 +88,8 @@ export const createLessonForUnit = async (req: Request, res: Response) => {
       audioUrl,
       order: order !== undefined ? order : count + 1,
     });
+    
+    const lesson = await Lesson.create(lessonData);
     res.status(201).json(lesson);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
