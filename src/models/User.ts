@@ -8,9 +8,10 @@ export interface IUser extends Document {
   role: 'Student' | 'Teacher' | 'Admin';
   phone?: string;
   subject?: string;
-  stageId?: mongoose.Types.ObjectId;        // kept for Students
-  stageIds?: mongoose.Types.ObjectId[];     // Teacher: assigned stages
-  subjectIds?: mongoose.Types.ObjectId[];   // Teacher: assigned subjects
+  stageId?: mongoose.Types.ObjectId;        // Student: educational stage (kept for quick filter)
+  gradeId?: mongoose.Types.ObjectId;        // Student: grade within that stage
+  stageIds?: mongoose.Types.ObjectId[];     // Teacher: legacy — prefer TeacherAssignment
+  subjectIds?: mongoose.Types.ObjectId[];   // Teacher: legacy — prefer TeacherAssignment
   cvUrl?: string;
   bio?: string;
   availableDays?: string[];
@@ -37,9 +38,10 @@ const userSchema = new Schema<IUser>(
     role: { type: String, enum: ['Student', 'Teacher', 'Admin'], default: 'Student' },
     phone: { type: String },
     subject: { type: String },
-    stageId: { type: Schema.Types.ObjectId, ref: 'Stage' },       // Student stage
-    stageIds: [{ type: Schema.Types.ObjectId, ref: 'Stage' }],   // Teacher assigned stages
-    subjectIds: [{ type: Schema.Types.ObjectId, ref: 'Subject' }], // Teacher assigned subjects
+    stageId: { type: Schema.Types.ObjectId, ref: 'Stage' },
+    gradeId: { type: Schema.Types.ObjectId, ref: 'Grade' },         // Student grade
+    stageIds: [{ type: Schema.Types.ObjectId, ref: 'Stage' }],
+    subjectIds: [{ type: Schema.Types.ObjectId, ref: 'Subject' }],
     cvUrl: { type: String },
     bio: { type: String, default: '' },
     availableDays: [{

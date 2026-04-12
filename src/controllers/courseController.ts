@@ -75,10 +75,7 @@ export const createCourse = async (req: any, res: Response) => {
       return;
     }
 
-    if (String(subject.stageId) !== String(stageId)) {
-      res.status(400).json({ message: 'Subject does not belong to the provided stage' });
-      return;
-    }
+    // Note: subject-stage validation removed in refactoring (Subject is now stage-agnostic)
 
     const course = new Course({
       title,
@@ -119,19 +116,7 @@ export const updateCourse = async (req: any, res: Response) => {
     if (subjectId !== undefined) course.subjectId = subjectId;
     if (teacherId !== undefined && req.user.role === 'Admin') course.teacherId = teacherId;
 
-    if (stageId !== undefined || subjectId !== undefined) {
-      const nextStageId = stageId ?? course.stageId;
-      const nextSubjectId = subjectId ?? course.subjectId;
-      const subject = await Subject.findById(nextSubjectId);
-      if (!subject) {
-        res.status(400).json({ message: 'Subject not found' });
-        return;
-      }
-      if (String(subject.stageId) !== String(nextStageId)) {
-        res.status(400).json({ message: 'Subject does not belong to the provided stage' });
-        return;
-      }
-    }
+    // Note: subject-stage cross-validation removed (Subject is now stage-agnostic)
 
     const updated = await course.save();
     res.json(updated);
