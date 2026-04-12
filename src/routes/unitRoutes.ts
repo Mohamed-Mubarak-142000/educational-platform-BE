@@ -11,6 +11,12 @@ import {
   enrollInUnit,
 } from '../controllers/unitController';
 import { protect, admin } from '../middlewares/authMiddleware';
+import { 
+  adminOrTeacher, 
+  validateUnitAccess,
+  checkOwnership 
+} from '../middlewares/rbacMiddleware';
+import Unit from '../models/Unit';
 
 const router = express.Router();
 
@@ -19,11 +25,19 @@ router.route('/availability').get(protect, getUnitAvailability);
 router.route('/enrolled/:studentId').get(protect, getEnrolledUnitIds);
 router.route('/enroll').post(protect, enrollInUnit);
 
-// Unit CRUD
-router.route('/:id').get(getUnitById).put(protect, admin, updateUnit).delete(protect, admin, deleteUnit);
+// Unit CRUD - Teachers can edit their own units
+router
+  .route('/:id')
+  .get(getUnitById)
+  .put(protect, adminOrTeacher, validateUnitAccess, checkOwnership(Unit), updateUnit)
+  .delete(protect, adminOrTeacher, validateUnitAccess, checkOwnership(Unit), deleteUnit);
+
 router.route('/:id/availability').put(protect, admin, setUnitAvailability);
 
-// Unit lessons
-router.route('/:unitId/lessons').get(getLessonsByUnit).post(protect, admin, createLessonForUnit);
+// Unit lessons - Teachers can create lessons in their units
+router
+  .route('/:unitId/lessons')
+  .get(getLessonsByUnit)
+  .post(protect, adminOrTeacher, validateUnitAccess, createLessonForUnit);
 
 export default router;

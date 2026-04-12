@@ -1,6 +1,9 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import Stage from '../models/Stage';
 import Subject from '../models/Subject';
+import Grade from '../models/Grade';
+import GradeSubject from '../models/GradeSubject';
 
 export const getStages = async (_req: Request, res: Response) => {
   try {
@@ -79,10 +82,175 @@ export const deleteStage = async (req: Request, res: Response) => {
 
 export const getSubjectsByStage = async (req: Request, res: Response) => {
   try {
-    const subjects = await Subject.find({ stageId: req.params.stageId })
-      .populate('teacherId', 'name')
-      .sort({ createdAt: 1 });
+    const stageId = req.params.stageId;
+
+    // 1. Find all grades in this stage
+    const grades = await Grade.find({ stageId });
+    const gradeIds = grades.map(g => g._id);
+
+    if (gradeIds.length === 0) {
+      res.json([]);
+      return;
+    }
+
+    // 2. Find all GradeSubject entries for these grades
+    const gradeSubjects = await GradeSubject.find({ 
+      gradeId: { $in: gradeIds } 
+    }).populate({
+      path: 'subjectId',
+      select: 'name nameAr description descriptionAr icon color createdBy'
+    }).populate({
+      path: 'gradeId',
+      select: 'name nameAr'
+    }).sort({ order: 1 });
+
+    // 3. Extract unique subjects with their grade info
+    const subjectMap = new Map();
+    
+    gradeSubjects.forEach(gs => {
+      const subject = gs.subjectId as any;
+      const grade = gs.gradeId as any;
+      
+      if (subject && subject._id) {
+        const subjectId = subject._id.toString();
+        
+        if (!subjectMap.has(subjectId)) {
+          subjectMap.set(subjectId, {
+            ...subject.toObject(),
+            grades: []
+          });
+        }
+        
+        // Add grade info
+        subjectMap.get(subjectId).grades.push({
+          _id: grade._id,
+          name: grade.name,
+          nameAr: grade.nameAr
+        });
+      }
+    });
+
+    // Convert map to array
+    const subjects = Array.from(subjectMap.values());
+    
     res.json(subjects);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// @desc  Assign a subject to ALL grades in a stage
+// @route POST /api/stages/:stageId/subjects
+// @access Admin
+// ---------------------------------------------------------------------------
+export const assignSubjectToStage = async (req: Request, res: Response) => {
+  try {
+    const { stageId } = req.params;
+    const { subjectId, order } = req.body;
+
+    if (!subjectId) {
+      res.status(400).json({ message: 'subjectId is required' });
+      return;
+    }
+
+    // Verify subject exists
+    const subject = await Subject.findById(subjectId);
+    if (!subject) {
+      res.status(404).json({ message: 'Subject not found' });
+      return;
+    }
+
+    // Find all grades in this stage
+    const grades = await Grade.find({ stageId });
+
+    if (grades.length === 0) {
+      res.status(400).json({ 
+        message: 'No grades found in this stage. Please create grades first.' 
+      });
+      return;
+    }
+
+    // Assign subject to each grade
+    const results = [];
+    const errors = [];
+
+    for (const grade of grades) {
+      try {
+        // Check if already exists
+        const existing = await GradeSubject.findOne({
+          gradeId: grade._id,
+          subjectId: new mongoose.Types.ObjectId(String(subjectId))
+        });
+
+        if (!existing) {
+          const gradeSubject = await GradeSubject.create({
+            gradeId: grade._id,
+            subjectId: new mongoose.Types.ObjectId(String(subjectId)),
+            order: order ?? 0
+          });
+          results.push({
+            gradeId: grade._id,
+            gradeName: grade.name,
+            gradeSubjectId: gradeSubject._id,
+            status: 'created'
+          });
+        } else {
+          results.push({
+            gradeId: grade._id,
+            gradeName: grade.name,
+            gradeSubjectId: existing._id,
+            status: 'already_exists'
+          });
+        }
+      } catch (error: any) {
+        errors.push({
+          gradeId: grade._id,
+          gradeName: grade.name,
+          error: error.message
+        });
+      }
+    }
+
+    res.status(201).json({
+      message: `Subject assigned to ${results.length} grade(s)`,
+      subject: subject.toObject(),
+      results,
+      errors: errors.length > 0 ? errors : undefined
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// @desc  Remove a subject from ALL grades in a stage
+// @route DELETE /api/stages/:stageId/subjects/:subjectId
+// @access Admin
+// ---------------------------------------------------------------------------
+export const removeSubjectFromStage = async (req: Request, res: Response) => {
+  try {
+    const { stageId, subjectId } = req.params;
+
+    // Find all grades in this stage
+    const grades = await Grade.find({ stageId });
+    const gradeIds = grades.map(g => g._id);
+
+    if (gradeIds.length === 0) {
+      res.status(404).json({ message: 'No grades found in this stage' });
+      return;
+    }
+
+    // Delete all GradeSubject entries
+    const result = await GradeSubject.deleteMany({
+      gradeId: { $in: gradeIds },
+      subjectId: new mongoose.Types.ObjectId(String(subjectId))
+    });
+
+    res.json({
+      message: `Subject removed from stage`,
+      deletedCount: result.deletedCount
+    });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

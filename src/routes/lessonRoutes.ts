@@ -16,15 +16,21 @@ import {
   migrateYouTubeUrls,
 } from '../controllers/lessonController';
 import { protect, teacher } from '../middlewares/authMiddleware';
+import { 
+  adminOrTeacher, 
+  validateLessonAccess,
+  checkOwnership 
+} from '../middlewares/rbacMiddleware';
+import Lesson from '../models/Lesson';
 
 const router = express.Router();
 
 // Sections (course track)
-router.route('/sections').post(protect, teacher, createSection);
+router.route('/sections').post(protect, adminOrTeacher, createSection);
 router.route('/sections/:courseId').get(getSections);
 
 // Section-based lesson create
-router.route('/').post(protect, teacher, createLesson);
+router.route('/').post(protect, adminOrTeacher, createLesson);
 
 // Course-based lesson list
 router.route('/course/:courseId').get(getLessonsByCourse);
@@ -33,18 +39,22 @@ router.route('/course/:courseId').get(getLessonsByCourse);
 router.route('/progress').post(protect, updateProgress);
 
 // One-time migration for YouTube URLs
-router.route('/migrate/youtube-urls').post(protect, teacher, migrateYouTubeUrls);
+router.route('/migrate/youtube-urls').post(protect, adminOrTeacher, migrateYouTubeUrls);
 
 // Lesson parts (delete by part id — must come before /:id)
-router.route('/parts/:id').delete(protect, teacher, deleteLessonPart);
+router.route('/parts/:id').delete(protect, adminOrTeacher, deleteLessonPart);
 
-// Single lesson — dual: if sectionId → array; if lessonId → object
-router.route('/:id').get(getLessons).put(protect, teacher, updateLesson).delete(protect, teacher, deleteLesson);
+// Single lesson — Teachers can only edit their own lessons
+router
+  .route('/:id')
+  .get(getLessons)
+  .put(protect, adminOrTeacher, validateLessonAccess, checkOwnership(Lesson), updateLesson)
+  .delete(protect, adminOrTeacher, validateLessonAccess, checkOwnership(Lesson), deleteLesson);
 
 // Lesson comments
 router.route('/:lessonId/comments').get(getCommentsByLesson).post(protect, addLessonComment);
 
 // Lesson parts
-router.route('/:lessonId/parts').get(getPartsByLesson).post(protect, teacher, createLessonPart);
+router.route('/:lessonId/parts').get(getPartsByLesson).post(protect, adminOrTeacher, createLessonPart);
 
 export default router;

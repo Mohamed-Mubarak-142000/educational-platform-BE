@@ -12,6 +12,7 @@ export interface IUnit extends Document {
   descriptionAr: string;
   order: number;
   isPublished: boolean;
+  createdBy?: mongoose.Types.ObjectId; // Admin or Teacher who created this
 }
 
 const UnitSchema = new Schema<IUnit>(
@@ -25,6 +26,7 @@ const UnitSchema = new Schema<IUnit>(
     descriptionAr: { type: String, default: '' },
     order: { type: Number, default: 0 },
     isPublished: { type: Boolean, default: false },
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true }
 );
