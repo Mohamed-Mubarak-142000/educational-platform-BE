@@ -5,6 +5,7 @@ import Answer from '../models/Answer';
 import Result from '../models/Result';
 import Lesson from '../models/Lesson';
 import Section from '../models/Section';
+import Course from '../models/Course';
 
 export const createQuiz = async (req: Request, res: Response) => {
   try {
@@ -153,8 +154,6 @@ export const getQuizzesByCourse = async (req: Request, res: Response) => {
 // @access  Private/Teacher
 export const getMyQuizzes = async (req: any, res: Response) => {
   try {
-    const Course = (await import('../models/Course')).default;
-
     const courses = await Course.find({ teacherId: req.user._id }).select('_id');
     const courseIds = courses.map((c: any) => c._id);
 

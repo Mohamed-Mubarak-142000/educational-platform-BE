@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import User from '../models/User';
+import Course from '../models/Course';
+import Enrollment from '../models/Enrollment';
 import Subject from '../models/Subject';
 import Unit from '../models/Unit';
 import UnitEnrollment from '../models/UnitEnrollment';
@@ -458,9 +460,6 @@ export const getTeacherDirectoryById = async (req: Request, res: Response) => {
 // @access  Private/Teacher
 export const getMyStudents = async (req: any, res: Response) => {
   try {
-    const Course = (await import('../models/Course')).default;
-    const Enrollment = (await import('../models/Enrollment')).default;
-
     const courses = await Course.find({ teacherId: req.user._id }).select('_id');
     const courseIds = courses.map((c: any) => c._id);
 
