@@ -6,7 +6,7 @@ import Unit from '../models/Unit';
 import TeacherAssignment from '../models/TeacherAssignment';
 import Grade from '../models/Grade';
 import { AuthRequest } from '../middlewares/authMiddleware';
-import { getSubjectFilter, attachCreator, getTeacherAssignments } from '../middlewares/rbacMiddleware';
+import { getSubjectFilter, attachCreator } from '../middlewares/rbacMiddleware';
 
 // ---------------------------------------------------------------------------
 // @desc  Get all subjects (filtered by role and optionally by stage)
@@ -18,24 +18,17 @@ export const getSubjects = async (req: AuthRequest, res: Response) => {
     let filter: any = {};
     const { stageId, stageName } = req.query;
 
-    // Debug logging
-    console.log('[getSubjects] User:', req.user?.email, 'Role:', req.user?.role);
-    console.log('[getSubjects] Query params:', { stageId, stageName });
-
     // Admin sees ALL subjects (no filtering)
     if (req.user?.role === 'Admin') {
       filter = {};
-      console.log('[getSubjects] Admin access - No filter applied');
     }
     // Teacher sees ONLY assigned subjects
     else if (req.user?.role === 'Teacher') {
       filter = await getSubjectFilter(req);
-      console.log('[getSubjects] Teacher access - Filter:', JSON.stringify(filter));
     }
     // Students or other roles see all published subjects (no filter for now)
     else {
       filter = {};
-      console.log('[getSubjects] Other role - No filter applied');
     }
     
     let subjects = await Subject.find(filter).sort({ name: 1 });
@@ -100,7 +93,6 @@ export const getSubjects = async (req: AuthRequest, res: Response) => {
       }
     }
     
-    console.log('[getSubjects] Final count:', subjects.length);
     res.json(subjects);
   } catch (error: any) {
     console.error('[getSubjects] Error:', error.message);
@@ -360,63 +352,5 @@ export const createUnitForSubject = async (req: Request, res: Response) => {
     res.status(201).json(unit);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
-  }
-};
-
-// ---------------------------------------------------------------------------
-// @desc  Debug endpoint - Check RBAC filter for current user
-// @route GET /api/subjects/debug/rbac
-// @access Private
-// ---------------------------------------------------------------------------
-export const debugRBAC = async (req: AuthRequest, res: Response) => {
-  try {
-    const user = req.user;
-    
-    if (!user) {
-      res.json({
-        authenticated: false,
-        message: 'No user found in request'
-      });
-      return;
-    }
-
-    const info: any = {
-      authenticated: true,
-      user: {
-        id: user._id,
-        email: user.email,
-        name: user.name,
-        role: user.role
-      }
-    };
-
-    // Get filter that would be applied
-    if (user.role === 'Admin') {
-      info.filter = {};
-      info.message = 'Admin sees ALL subjects (no filter)';
-    } else if (user.role === 'Teacher') {
-      const assignments = await getTeacherAssignments(user._id.toString());
-      info.assignments = {
-        subjectIds: assignments.subjectIds,
-        gradeIds: assignments.gradeIds,
-        count: assignments.assignments.length
-      };
-      info.filter = await getSubjectFilter(req);
-      info.message = `Teacher sees ${assignments.subjectIds.length} assigned subject(s)`;
-    } else {
-      info.filter = {};
-      info.message = 'Other role - sees all subjects';
-    }
-
-    // Get actual subject count with this filter
-    const count = await Subject.countDocuments(info.filter);
-    info.subjectCount = count;
-
-    res.json(info);
-  } catch (error: any) {
-    res.status(500).json({ 
-      error: error.message,
-      authenticated: !!req.user
-    });
   }
 };

@@ -36,7 +36,7 @@ export const admin = (req: AuthRequest, res: Response, next: NextFunction) => {
   if (req.user && req.user.role === 'Admin') {
     next();
   } else {
-    res.status(401);
+    res.status(403);
     next(new Error('Not authorized as an admin'));
   }
 };
@@ -45,7 +45,7 @@ export const teacher = (req: AuthRequest, res: Response, next: NextFunction) => 
   if (req.user && (req.user.role === 'Teacher' || req.user.role === 'Admin')) {
     next();
   } else {
-    res.status(401);
+    res.status(403);
     next(new Error('Not authorized as a teacher'));
   }
 };

@@ -31,6 +31,7 @@ import teacherScheduleRoutes from './routes/teacherScheduleRoutes';
 import gradeRoutes from './routes/gradeRoutes';
 import teacherAssignmentRoutes from './routes/teacherAssignmentRoutes';
 import progressRoutes from './routes/progressRoutes';
+import platformConfigRoutes from './routes/platformConfigRoutes';
 
 // Use Routes here
 app.use('/api/users', userRoutes);
@@ -50,6 +51,7 @@ app.use('/api/teacher-schedules', teacherScheduleRoutes);
 app.use('/api/grades', gradeRoutes);
 app.use('/api/teacher-assignments', teacherAssignmentRoutes);
 app.use('/api/progress', progressRoutes);
+app.use('/api/platform-config', platformConfigRoutes);
 
 // Error Handling
 app.use(notFound);
