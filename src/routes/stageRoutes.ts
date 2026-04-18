@@ -8,11 +8,15 @@ import {
   getSubjectsByStage,
   assignSubjectToStage,
   removeSubjectFromStage,
+  getStageSubjectCounts,
 } from '../controllers/stageController';
 import { protect } from '../middlewares/authMiddleware';
 import { adminOnly } from '../middlewares/rbacMiddleware';
 
 const router = express.Router();
+
+// Public: subject count per stage (must come before /:id to avoid conflict)
+router.get('/subject-counts', getStageSubjectCounts);
 
 // Stages - Admin only (Teachers CANNOT manage stages)
 router.route('/').get(getStages).post(protect, adminOnly, createStage);

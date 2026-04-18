@@ -1,23 +1,36 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
+export type SubscriptionType = 'subject' | 'unit';
+export type SubscriptionStatus = 'Approved' | 'Revoked';
+
 export interface ISubscription extends Document {
   studentId: mongoose.Types.ObjectId;
-  plan: string;
-  status: 'Active' | 'Inactive' | 'Cancelled';
-  startDate?: Date;
-  endDate?: Date;
+  teacherId: mongoose.Types.ObjectId;
+  subjectId: mongoose.Types.ObjectId;
+  gradeId: mongoose.Types.ObjectId;
+  unitId?: mongoose.Types.ObjectId;
+  type: SubscriptionType;
+  status: SubscriptionStatus;
 }
 
 const SubscriptionSchema = new Schema<ISubscription>(
   {
-    studentId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
-    plan: { type: String, required: true },
-    status: { type: String, enum: ['Active', 'Inactive', 'Cancelled'], default: 'Inactive' },
-    startDate: { type: Date },
-    endDate: { type: Date },
+    studentId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    teacherId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    subjectId: { type: Schema.Types.ObjectId, ref: 'Subject', required: true },
+    gradeId: { type: Schema.Types.ObjectId, ref: 'Grade', required: true },
+    unitId: { type: Schema.Types.ObjectId, ref: 'Unit' },
+    type: { type: String, enum: ['subject', 'unit'], required: true },
+    status: { type: String, enum: ['Approved', 'Revoked'], default: 'Approved' },
   },
   { timestamps: true }
 );
+
+SubscriptionSchema.index(
+  { studentId: 1, teacherId: 1, subjectId: 1, gradeId: 1, unitId: 1, type: 1 },
+  { unique: true }
+);
+SubscriptionSchema.index({ studentId: 1, subjectId: 1, gradeId: 1 });
 
 const Subscription: Model<ISubscription> = mongoose.model<ISubscription>('Subscription', SubscriptionSchema);
 export default Subscription;

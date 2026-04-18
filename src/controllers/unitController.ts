@@ -10,6 +10,8 @@ import QuizGrade from '../models/QuizGrade';
 import Comment from '../models/Comment';
 import { AuthRequest } from '../middlewares/authMiddleware';
 import { attachCreator } from '../middlewares/rbacMiddleware';
+import TeacherAssignment from '../models/TeacherAssignment';
+import { getStudentSubscriptionScope } from '../utils/subscriptionAccess';
 
 // ── Unit CRUD ─────────────────────────────────────────────────────
 
@@ -33,10 +35,11 @@ export const updateUnit = async (req: Request, res: Response) => {
       res.status(404).json({ message: 'Unit not found' });
       return;
     }
-    const { title, description, order } = req.body;
+    const { title, description, order, price } = req.body;
     if (title !== undefined) unit.title = title;
     if (description !== undefined) unit.description = description;
     if (order !== undefined) unit.order = order;
+    if (price !== undefined) unit.price = Number(price) || 0;
     const updated = await unit.save();
     res.json(updated);
   } catch (error: any) {
@@ -62,8 +65,61 @@ export const deleteUnit = async (req: Request, res: Response) => {
 
 export const getLessonsByUnit = async (req: Request, res: Response) => {
   try {
-    const lessons = await Lesson.find({ unitId: req.params.unitId as string }).sort({ order: 1 });
-    res.json(lessons);
+    const unitId = req.params.unitId as string;
+    const unit = await Unit.findById(unitId).select('assignmentId subjectId gradeId order').lean();
+    if (!unit) {
+      res.status(404).json({ message: 'Unit not found' });
+      return;
+    }
+
+    const lessons = await Lesson.find({ unitId }).sort({ order: 1 }).lean();
+
+    const reqUser = (req as any).user;
+    if (!reqUser || reqUser.role !== 'Student') {
+      res.json(lessons);
+      return;
+    }
+
+    let teacherId: string | undefined;
+    if (unit.assignmentId) {
+      const assignment = await TeacherAssignment.findById(unit.assignmentId).select('teacherId').lean();
+      teacherId = assignment ? String(assignment.teacherId) : undefined;
+    }
+
+    const scope = teacherId
+      ? await getStudentSubscriptionScope({
+          studentId: String(reqUser._id),
+          teacherId,
+          subjectId: String(unit.subjectId),
+          gradeId: String(unit.gradeId),
+        })
+      : { subjectAccess: false, unitAccessIds: new Set<string>() };
+
+    const unitUnlocked = scope.subjectAccess || scope.unitAccessIds.has(String(unit._id));
+
+    const sanitized = lessons.map((lesson: any, idx: number) => {
+      const isFree = idx === 0;
+      const locked = !unitUnlocked && !isFree;
+      if (!locked) {
+        return { ...lesson, locked: false, isFree, isUnlocked: true };
+      }
+      return {
+        _id: lesson._id,
+        unitId: lesson.unitId,
+        title: lesson.title,
+        titleAr: lesson.titleAr,
+        description: lesson.description,
+        descriptionAr: lesson.descriptionAr,
+        order: lesson.order,
+        duration: lesson.duration,
+        isPublished: lesson.isPublished,
+        isFree,
+        locked: true,
+        isUnlocked: false,
+      };
+    });
+
+    res.json(sanitized);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -73,7 +129,12 @@ export const createLessonForUnit = async (req: AuthRequest, res: Response) => {
   try {
     const unitId = req.params.unitId as string;
     const { title, description, videoUrl, pdfUrl, imageUrl, modelUrl, modelExplanation, audioUrl, order } = req.body;
-    const count = await Lesson.countDocuments({ unitId });
+    const [count, unit] = await Promise.all([
+      Lesson.countDocuments({ unitId }),
+      Unit.findById(unitId).select('order').lean(),
+    ]);
+    // Free preview is the first lesson of each unit
+    const isFree = count === 0;
     
     const lessonData = attachCreator(req, {
       unitId,
@@ -87,6 +148,7 @@ export const createLessonForUnit = async (req: AuthRequest, res: Response) => {
       modelExplanation,
       audioUrl,
       order: order !== undefined ? order : count + 1,
+      isFree,
     });
     
     const lesson = await Lesson.create(lessonData);
@@ -153,13 +215,13 @@ export const getQuizByAttached = async (req: Request, res: Response) => {
 
 export const createUnitQuiz = async (req: Request, res: Response) => {
   try {
-    const { attachedTo, attachedToId, title } = req.body;
+    const { attachedTo, attachedToId, title, timeLimit } = req.body;
     const existing = await UnitQuiz.findOne({ attachedToId });
     if (existing) {
       res.status(400).json({ message: 'A quiz already exists for this unit/lesson' });
       return;
     }
-    const quiz = await UnitQuiz.create({ attachedTo, attachedToId, title });
+    const quiz = await UnitQuiz.create({ attachedTo, attachedToId, title, timeLimit: timeLimit ?? 0 });
     res.status(201).json(quiz);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -174,6 +236,7 @@ export const updateUnitQuiz = async (req: Request, res: Response) => {
       return;
     }
     if (req.body.title !== undefined) quiz.title = req.body.title;
+    if (req.body.timeLimit !== undefined) quiz.timeLimit = req.body.timeLimit;
     const updated = await quiz.save();
     res.json(updated);
   } catch (error: any) {

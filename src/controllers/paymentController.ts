@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import Payment from '../models/Payment';
-import Subscription from '../models/Subscription';
 
 export const submitPayment = async (req: any, res: Response) => {
   try {
@@ -70,22 +69,6 @@ export const approvePayment = async (req: any, res: Response) => {
     payment.reviewedBy = req.user._id;
     payment.reviewedAt = new Date();
     await payment.save();
-
-    const existingSubscription = await Subscription.findOne({ studentId: payment.studentId });
-    if (existingSubscription) {
-      existingSubscription.plan = payment.plan;
-      existingSubscription.status = 'Active';
-      existingSubscription.startDate = new Date();
-      existingSubscription.endDate = undefined;
-      await existingSubscription.save();
-    } else {
-      await Subscription.create({
-        studentId: payment.studentId,
-        plan: payment.plan,
-        status: 'Active',
-        startDate: new Date(),
-      });
-    }
 
     res.json({ message: 'Payment approved', payment });
   } catch (error: any) {

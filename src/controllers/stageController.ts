@@ -255,3 +255,39 @@ export const removeSubjectFromStage = async (req: Request, res: Response) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// ---------------------------------------------------------------------------
+// @desc  Get distinct subject count per stage — used by Landing page cards
+// @route GET /api/stages/subject-counts
+// @access Public
+// ---------------------------------------------------------------------------
+export const getStageSubjectCounts = async (_req: Request, res: Response) => {
+  try {
+    // Aggregate: Stage → Grades → GradeSubjects → distinct subjects
+    const stages = await Stage.find({}).select('_id').lean();
+
+    const counts: Record<string, number> = {};
+
+    await Promise.all(
+      stages.map(async (stage) => {
+        const grades = await Grade.find({ stageId: stage._id }).select('_id').lean();
+        const gradeIds = grades.map((g) => g._id);
+
+        if (gradeIds.length === 0) {
+          counts[stage._id.toString()] = 0;
+          return;
+        }
+
+        const distinctSubjects = await GradeSubject.distinct('subjectId', {
+          gradeId: { $in: gradeIds },
+        });
+
+        counts[stage._id.toString()] = distinctSubjects.length;
+      })
+    );
+
+    res.json(counts);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};

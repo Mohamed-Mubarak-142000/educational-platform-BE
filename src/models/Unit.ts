@@ -1,6 +1,8 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
 export interface IUnit extends Document {
+  /** TeacherAssignment this unit belongs to (replaces gradeSubjectId for new content) */
+  assignmentId?: mongoose.Types.ObjectId;
   /** Junction reference: the GradeSubject row this unit belongs to */
   gradeSubjectId: mongoose.Types.ObjectId;
   /** Kept for convenience queries without joining GradeSubject */
@@ -10,6 +12,7 @@ export interface IUnit extends Document {
   titleAr: string;
   description: string;
   descriptionAr: string;
+  price?: number;
   order: number;
   isPublished: boolean;
   createdBy?: mongoose.Types.ObjectId; // Admin or Teacher who created this
@@ -17,13 +20,15 @@ export interface IUnit extends Document {
 
 const UnitSchema = new Schema<IUnit>(
   {
-    gradeSubjectId: { type: Schema.Types.ObjectId, ref: 'GradeSubject', required: true },
+    assignmentId: { type: Schema.Types.ObjectId, ref: 'TeacherAssignment' },
+    gradeSubjectId: { type: Schema.Types.ObjectId, ref: 'GradeSubject' },
     subjectId: { type: Schema.Types.ObjectId, ref: 'Subject', required: true },
     gradeId: { type: Schema.Types.ObjectId, ref: 'Grade', required: true },
     title: { type: String, required: true },
     titleAr: { type: String, default: '' },
     description: { type: String, default: '' },
     descriptionAr: { type: String, default: '' },
+    price: { type: Number, default: 0 },
     order: { type: Number, default: 0 },
     isPublished: { type: Boolean, default: false },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
@@ -31,6 +36,7 @@ const UnitSchema = new Schema<IUnit>(
   { timestamps: true }
 );
 
+UnitSchema.index({ assignmentId: 1, order: 1 });
 UnitSchema.index({ gradeSubjectId: 1, order: 1 });
 UnitSchema.index({ subjectId: 1, gradeId: 1 });
 

@@ -12,7 +12,7 @@ import {
 } from '../controllers/unitController';
 import { protect, admin } from '../middlewares/authMiddleware';
 import { 
-  adminOrTeacher, 
+  teacherOnly, 
   validateUnitAccess,
   checkOwnership 
 } from '../middlewares/rbacMiddleware';
@@ -29,15 +29,15 @@ router.route('/enroll').post(protect, enrollInUnit);
 router
   .route('/:id')
   .get(getUnitById)
-  .put(protect, adminOrTeacher, validateUnitAccess, checkOwnership(Unit), updateUnit)
-  .delete(protect, adminOrTeacher, validateUnitAccess, checkOwnership(Unit), deleteUnit);
+  .put(protect, teacherOnly, validateUnitAccess, checkOwnership(Unit), updateUnit)
+  .delete(protect, teacherOnly, validateUnitAccess, checkOwnership(Unit), deleteUnit);
 
 router.route('/:id/availability').put(protect, admin, setUnitAvailability);
 
 // Unit lessons - Teachers can create lessons in their units
 router
   .route('/:unitId/lessons')
-  .get(getLessonsByUnit)
-  .post(protect, adminOrTeacher, validateUnitAccess, createLessonForUnit);
+  .get(protect, getLessonsByUnit)
+  .post(protect, teacherOnly, validateUnitAccess, createLessonForUnit);
 
 export default router;

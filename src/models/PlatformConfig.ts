@@ -14,6 +14,7 @@ export interface NavItem {
   isAnchor: boolean;     // true → scrollToSection; false → router navigate
   order: number;
   isVisible: boolean;
+  sectionKey?: string;   // if set, links to a named landing section
 }
 
 export interface StatItem {
@@ -50,6 +51,25 @@ export type SectionType =
   | 'faq'
   | 'custom';
 
+export type BlockType = 'title' | 'text' | 'image' | 'video';
+
+export interface BlockStyle {
+  alignment?: 'left' | 'center' | 'right';
+  padding?: 'none' | 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
+}
+
+export interface SectionBlock {
+  key: string;
+  type: BlockType;
+  textAr?: string;
+  textEn?: string;
+  url?: string;
+  altAr?: string;
+  altEn?: string;
+  style?: BlockStyle;
+}
+
 export interface LandingSection {
   key: string;
   type: SectionType;
@@ -62,6 +82,7 @@ export interface LandingSection {
   stats?: StatItem[];
   testimonials?: TestimonialItem[];
   faqItems?: FaqItem[];
+  blocks?: SectionBlock[];
 }
 
 export interface HeroConfig {
@@ -115,6 +136,7 @@ const NavItemSchema = new Schema<NavItem>(
     isAnchor: { type: Boolean, default: true },
     order: { type: Number, default: 0 },
     isVisible: { type: Boolean, default: true },
+    sectionKey: { type: String, default: undefined },
   },
   { _id: false }
 );
@@ -153,6 +175,29 @@ const FaqItemSchema = new Schema<FaqItem>(
   { _id: false }
 );
 
+const BlockStyleSchema = new Schema<BlockStyle>(
+  {
+    alignment: { type: String, enum: ['left', 'center', 'right'], default: 'left' },
+    padding: { type: String, enum: ['none', 'sm', 'md', 'lg'], default: 'md' },
+    size: { type: String, enum: ['sm', 'md', 'lg', 'xl'], default: 'md' },
+  },
+  { _id: false }
+);
+
+const BlockSectionSchema = new Schema<SectionBlock>(
+  {
+    key: { type: String, required: true },
+    type: { type: String, enum: ['title', 'text', 'image', 'video'], required: true },
+    textAr: { type: String, default: '' },
+    textEn: { type: String, default: '' },
+    url: { type: String, default: '' },
+    altAr: { type: String, default: '' },
+    altEn: { type: String, default: '' },
+    style: { type: BlockStyleSchema, default: () => ({}) },
+  },
+  { _id: false }
+);
+
 const LandingSectionSchema = new Schema<LandingSection>(
   {
     key: { type: String, required: true },
@@ -170,6 +215,7 @@ const LandingSectionSchema = new Schema<LandingSection>(
     stats: { type: [StatItemSchema], default: undefined },
     testimonials: { type: [TestimonialItemSchema], default: undefined },
     faqItems: { type: [FaqItemSchema], default: undefined },
+    blocks: { type: [BlockSectionSchema], default: undefined },
   },
   { _id: false }
 );

@@ -5,6 +5,7 @@ import Lesson from '../models/Lesson';
 import LessonPart from '../models/LessonPart';
 import Progress from '../models/Progress';
 import Comment from '../models/Comment';
+import { canAccessLesson } from '../utils/subscriptionAccess';
 
 const resolveCourseForLesson = async (lesson: any) => {
   if (lesson.courseId) {
@@ -145,6 +146,14 @@ export const getLessons = async (req: Request, res: Response) => {
     // Otherwise treat as a single lesson ID
     const lesson = await Lesson.findById(id as string).catch(() => null);
     if (lesson) {
+      const reqUser = (req as any).user;
+      if (reqUser?.role === 'Student') {
+        const access = await canAccessLesson({ studentId: String(reqUser._id), lessonId: String(lesson._id) });
+        if (!access.allowed) {
+          res.status(403).json({ message: 'Lesson locked' });
+          return;
+        }
+      }
       res.json(lesson);
       return;
     }
@@ -163,11 +172,16 @@ export const updateLesson = async (req: Request, res: Response) => {
       return;
     }
     const course = await resolveCourseForLesson(lesson);
-    if (!course && (req as any).user?.role !== 'Admin') {
-      res.status(403).json({ message: 'Not authorized to modify this content' });
-      return;
+    if (course) {
+      if (!assertCourseOwnership(req as any, res, course)) return;
+    } else if ((req as any).user?.role !== 'Admin') {
+      // Unit-based lesson: verify the calling teacher owns it
+      const lessonTeacherId = lesson.teacherId?.toString();
+      if (!lessonTeacherId || lessonTeacherId !== String((req as any).user?._id)) {
+        res.status(403).json({ message: 'Not authorized to modify this content' });
+        return;
+      }
     }
-    if (course && !assertCourseOwnership(req as any, res, course)) return;
     const fields = ['title', 'description', 'videoUrl', 'pdfUrl', 'imageUrl', 'modelUrl', 'modelExplanation', 'audioUrl', 'order', 'duration'] as const;
     fields.forEach((f) => {
       if (req.body[f] !== undefined) (lesson as any)[f] = req.body[f];
@@ -187,11 +201,16 @@ export const deleteLesson = async (req: Request, res: Response) => {
       return;
     }
     const course = await resolveCourseForLesson(lesson);
-    if (!course && (req as any).user?.role !== 'Admin') {
-      res.status(403).json({ message: 'Not authorized to modify this content' });
-      return;
+    if (course) {
+      if (!assertCourseOwnership(req as any, res, course)) return;
+    } else if ((req as any).user?.role !== 'Admin') {
+      // Unit-based lesson: verify the calling teacher owns it
+      const lessonTeacherId = lesson.teacherId?.toString();
+      if (!lessonTeacherId || lessonTeacherId !== String((req as any).user?._id)) {
+        res.status(403).json({ message: 'Not authorized to modify this content' });
+        return;
+      }
     }
-    if (course && !assertCourseOwnership(req as any, res, course)) return;
     await LessonPart.deleteMany({ lessonId: lesson._id });
     await lesson.deleteOne();
     res.json({ message: 'Lesson deleted successfully' });
@@ -273,11 +292,16 @@ export const createLessonPart = async (req: Request, res: Response) => {
       return;
     }
     const course = await resolveCourseForLesson(lesson);
-    if (!course && (req as any).user?.role !== 'Admin') {
-      res.status(403).json({ message: 'Not authorized to modify this content' });
-      return;
+    if (course) {
+      if (!assertCourseOwnership(req as any, res, course)) return;
+    } else if ((req as any).user?.role !== 'Admin') {
+      // Unit-based lesson: verify the calling teacher owns it
+      const lessonTeacherId = lesson.teacherId?.toString();
+      if (!lessonTeacherId || lessonTeacherId !== String((req as any).user?._id)) {
+        res.status(403).json({ message: 'Not authorized to modify this content' });
+        return;
+      }
     }
-    if (course && !assertCourseOwnership(req as any, res, course)) return;
     const { title, content, media, quiz, order } = req.body;
     const count = await LessonPart.countDocuments({ lessonId });
     const part = await LessonPart.create({
@@ -305,11 +329,16 @@ export const deleteLessonPart = async (req: Request, res: Response) => {
     const lesson = await Lesson.findById(part.lessonId);
     if (lesson) {
       const course = await resolveCourseForLesson(lesson);
-      if (!course && (req as any).user?.role !== 'Admin') {
-        res.status(403).json({ message: 'Not authorized to modify this content' });
-        return;
+      if (course) {
+        if (!assertCourseOwnership(req as any, res, course)) return;
+      } else if ((req as any).user?.role !== 'Admin') {
+        // Unit-based lesson: verify the calling teacher owns it
+        const lessonTeacherId = lesson.teacherId?.toString();
+        if (!lessonTeacherId || lessonTeacherId !== String((req as any).user?._id)) {
+          res.status(403).json({ message: 'Not authorized to modify this content' });
+          return;
+        }
       }
-      if (course && !assertCourseOwnership(req as any, res, course)) return;
     }
     await part.deleteOne();
     res.json({ message: 'Lesson part deleted successfully' });
