@@ -4,6 +4,7 @@ import UnitProgress from '../models/UnitProgress';
 import SubjectProgress from '../models/SubjectProgress';
 import Lesson from '../models/Lesson';
 import Unit from '../models/Unit';
+import { canAccessLesson } from '../utils/subscriptionAccess';
 
 // ---------------------------------------------------------------------------
 // Helper: recompute and upsert UnitProgress after a lesson is completed
@@ -71,6 +72,12 @@ export const updateLessonProgress = async (req: Request, res: Response) => {
 
     if (!lessonId) {
       res.status(400).json({ message: 'lessonId is required' });
+      return;
+    }
+
+    const access = await canAccessLesson({ studentId, lessonId });
+    if (!access.allowed) {
+      res.status(403).json({ message: 'Lesson locked' });
       return;
     }
 

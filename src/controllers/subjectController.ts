@@ -3,6 +3,9 @@ import mongoose from 'mongoose';
 import Subject from '../models/Subject';
 import GradeSubject from '../models/GradeSubject';
 import Unit from '../models/Unit';
+import Lesson from '../models/Lesson';
+import Subscription from '../models/Subscription';
+import SubscriptionRequest from '../models/SubscriptionRequest';
 import TeacherAssignment from '../models/TeacherAssignment';
 import Grade from '../models/Grade';
 import { AuthRequest } from '../middlewares/authMiddleware';
@@ -123,6 +126,265 @@ export const getSubjectById = async (req: Request, res: Response) => {
       .populate('gradeId', 'name nameAr');
 
     res.json({ ...subject.toObject(), gradeAssignments, teachers });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// @desc  Get teachers for a subject (student-facing)
+// @route GET /api/subjects/:subjectId/teachers
+// @access Private
+// ---------------------------------------------------------------------------
+export const getSubjectTeachers = async (req: AuthRequest, res: Response) => {
+  try {
+    const { subjectId } = req.params;
+    const gradeId = req.user?.role === 'Student'
+      ? String(req.user.gradeId ?? '')
+      : (req.query.gradeId as string | undefined);
+    const stageId = req.user?.role === 'Student'
+      ? String(req.user.stageId ?? '')
+      : (req.query.stageId as string | undefined);
+
+    const filter: Record<string, unknown> = { subjectId };
+    if (gradeId) {
+      filter.gradeId = gradeId;
+    } else if (stageId) {
+      const grades = await Grade.find({ stageId }).select('_id').lean();
+      const gradeIds = grades.map((g) => g._id);
+      if (gradeIds.length > 0) filter.gradeId = { $in: gradeIds };
+    }
+
+    const assignments = await TeacherAssignment.find(filter)
+      .populate('teacherId', 'name email bio profileImage')
+      .populate('subjectId', 'name nameAr icon color')
+      .populate('gradeId', 'name nameAr');
+    const assignmentsWithPricing = await Promise.all(
+      assignments.map(async (assignment: any) => {
+        const units = await Unit.find({ assignmentId: assignment._id }).select('price').lean();
+        const anyUnitPrice = units.some((unit: any) => Number(unit.price) > 0);
+        const subjectPrice = anyUnitPrice
+          ? units.reduce((sum, unit: any) => sum + (Number(unit.price) || 0), 0)
+          : 300;
+        return { ...assignment.toObject(), subjectPrice };
+      })
+    );
+
+    res.json(assignmentsWithPricing);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// @desc  Get subject content scoped to a teacher (student-facing)
+// @route GET /api/subjects/:subjectId/teachers/:teacherId/content
+// @access Private
+// ---------------------------------------------------------------------------
+export const getSubjectTeacherContent = async (req: AuthRequest, res: Response) => {
+  try {
+    const { subjectId, teacherId } = req.params;
+    const subjectIdStr = String(subjectId);
+    const teacherIdStr = String(teacherId);
+    const gradeId = req.user?.role === 'Student'
+      ? String(req.user.gradeId ?? '')
+      : (req.query.gradeId as string | undefined);
+    const stageId = req.user?.role === 'Student'
+      ? String(req.user.stageId ?? '')
+      : (req.query.stageId as string | undefined);
+
+    let assignment = await TeacherAssignment.findOne({
+      subjectId: subjectIdStr,
+      teacherId: teacherIdStr,
+      ...(gradeId ? { gradeId } : {}),
+    })
+      .populate('teacherId', 'name profileImage')
+      .populate('subjectId', 'name nameAr icon color')
+      .populate('gradeId', 'name nameAr stageId')
+      .lean();
+
+    if (!assignment && stageId) {
+      const grades = await Grade.find({ stageId }).select('_id').lean();
+      const gradeIds = grades.map((g) => g._id);
+      if (gradeIds.length > 0) {
+        const assignments = await TeacherAssignment.find({
+          subjectId: subjectIdStr,
+          teacherId: teacherIdStr,
+          gradeId: { $in: gradeIds },
+        })
+          .populate('teacherId', 'name profileImage')
+          .populate('subjectId', 'name nameAr icon color')
+          .populate('gradeId', 'name nameAr stageId')
+          .lean();
+
+        assignment = assignments.find((a) => a.isPrimary) ?? assignments[0];
+      }
+    }
+
+    if (!assignment) {
+      res.status(404).json({ message: 'Assignment not found' });
+      return;
+    }
+
+    const normalizedSubjectId = typeof assignment.subjectId === 'object'
+      ? String((assignment.subjectId as any)?._id ?? assignment.subjectId)
+      : String(assignment.subjectId);
+    const normalizedGradeId = typeof assignment.gradeId === 'object'
+      ? String((assignment.gradeId as any)?._id ?? assignment.gradeId)
+      : String(assignment.gradeId);
+    const normalizedTeacherId = typeof assignment.teacherId === 'object'
+      ? String((assignment.teacherId as any)?._id ?? assignment.teacherId)
+      : String(assignment.teacherId);
+
+    if (typeof assignment.subjectId === 'object' || typeof assignment.gradeId === 'object' || typeof assignment.teacherId === 'object') {
+      console.warn('[getSubjectTeacherContent] normalized populated assignment ids', {
+        assignmentId: String(assignment._id),
+        subjectId: normalizedSubjectId,
+        gradeId: normalizedGradeId,
+        teacherId: normalizedTeacherId,
+      });
+    }
+
+    let units = await Unit.find({ assignmentId: assignment._id }).sort({ order: 1 }).lean();
+    if (units.length === 0) {
+      const legacyUnits = await Unit.find({
+        $or: [{ assignmentId: { $exists: false } }, { assignmentId: null }],
+        subjectId: normalizedSubjectId,
+        gradeId: normalizedGradeId,
+      }).sort({ order: 1 }).lean();
+
+      if (legacyUnits.length > 0) {
+        const legacyUnitIds = legacyUnits.map((unit) => unit._id);
+        const legacyLessons = await Lesson.find({ unitId: { $in: legacyUnitIds } })
+          .select('unitId teacherId')
+          .lean();
+
+        const lessonTeacherUnitIds = new Set(
+          legacyLessons
+            .filter((lesson: any) => String(lesson.teacherId) === normalizedTeacherId)
+            .map((lesson: any) => String(lesson.unitId))
+        );
+
+        units = legacyUnits.filter((unit: any) =>
+          String(unit.createdBy) === normalizedTeacherId || lessonTeacherUnitIds.has(String(unit._id))
+        );
+      }
+    }
+
+    console.log('[getSubjectTeacherContent] content debug', {
+      subjectId: subjectIdStr,
+      teacherId: teacherIdStr,
+      gradeId: gradeId ?? null,
+      assignmentId: String(assignment._id),
+      unitsCount: units.length,
+    });
+
+    const unitIds = units.map((u) => u._id);
+    let lessons = await Lesson.find({ unitId: { $in: unitIds }, isPublished: true })
+      .sort({ order: 1, createdAt: 1 })
+      .lean();
+
+    if (lessons.length === 0) {
+      lessons = await Lesson.find({ unitId: { $in: unitIds } })
+        .sort({ order: 1, createdAt: 1 })
+        .lean();
+    }
+
+    let subjectAccess = false;
+    const unitAccessIds = new Set<string>();
+    let subscriptionStatus: 'Approved' | 'Pending' | 'None' = 'None';
+    const pendingUnitIds: string[] = [];
+
+    if (req.user?.role === 'Student') {
+      const subs = await Subscription.find({
+        studentId: req.user._id,
+        teacherId: normalizedTeacherId,
+        subjectId: normalizedSubjectId,
+        gradeId: normalizedGradeId,
+        status: 'Approved',
+      }).lean();
+
+      subjectAccess = subs.some((s: any) => s.type === 'subject');
+      subs
+        .filter((s: any) => s.type === 'unit' && s.unitId)
+        .forEach((s: any) => unitAccessIds.add(String(s.unitId)));
+
+      if (subjectAccess) {
+        subscriptionStatus = 'Approved';
+      } else {
+        const pending = await SubscriptionRequest.find({
+          studentId: req.user._id,
+          teacherId: normalizedTeacherId,
+          subjectId: normalizedSubjectId,
+          gradeId: normalizedGradeId,
+          status: 'Pending',
+        }).lean();
+
+        const hasPendingSubject = pending.some((p: any) => p.type === 'subject');
+        if (hasPendingSubject) subscriptionStatus = 'Pending';
+
+        pending
+          .filter((p: any) => p.type === 'unit' && p.unitId)
+          .forEach((p: any) => pendingUnitIds.push(String(p.unitId)));
+      }
+    }
+
+    const lessonByUnit = new Map<string, any[]>();
+    lessons.forEach((lesson: any) => {
+      const key = String(lesson.unitId);
+      if (!lessonByUnit.has(key)) lessonByUnit.set(key, []);
+      lessonByUnit.get(key)!.push(lesson);
+    });
+
+    const payloadUnits = units.map((unit: any) => {
+      const unitLessons = lessonByUnit.get(String(unit._id)) || [];
+      const unitUnlocked = subjectAccess || unitAccessIds.has(String(unit._id));
+      const firstLessonId = unitLessons[0]?._id ? String(unitLessons[0]._id) : null;
+      const normalizedLessons = unitLessons.map((lesson: any) => {
+        const isFree = firstLessonId ? String(lesson._id) === firstLessonId : false;
+        const locked = req.user?.role === 'Student' ? !unitUnlocked && !isFree : false;
+        if (!locked) {
+          return { ...lesson, isFree, locked: false, isUnlocked: true };
+        }
+        return {
+          _id: lesson._id,
+          unitId: lesson.unitId,
+          title: lesson.title,
+          titleAr: lesson.titleAr,
+          description: lesson.description,
+          descriptionAr: lesson.descriptionAr,
+          order: lesson.order,
+          duration: lesson.duration,
+          isPublished: lesson.isPublished,
+          isFree,
+          locked: true,
+          isUnlocked: false,
+        };
+      });
+
+      return {
+        ...unit,
+        isUnlocked: req.user?.role === 'Student' ? unitUnlocked : true,
+        lessons: normalizedLessons,
+      };
+    });
+
+    const anyUnitPrice = payloadUnits.some((unit: any) => Number(unit.price) > 0);
+    const subjectPrice = anyUnitPrice
+      ? payloadUnits.reduce((sum, unit: any) => sum + (Number(unit.price) || 0), 0)
+      : 300;
+
+    res.json({
+      assignmentId: String(assignment._id),
+      assignment,
+      units: payloadUnits,
+      pricing: { subject: subjectPrice },
+      access: req.user?.role === 'Student'
+        ? { subject: subjectAccess, unitIds: Array.from(unitAccessIds) }
+        : undefined,
+      subscriptionStatus,
+      pendingUnitIds,
+    });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -267,7 +529,7 @@ export const getUnitsBySubjectAndGrade = async (req: Request, res: Response) => 
 export const createUnitForSubjectGrade = async (req: AuthRequest, res: Response) => {
   try {
     const { subjectId, gradeId } = req.params;
-    const { title, titleAr, description, descriptionAr, isPublished } = req.body;
+    const { title, titleAr, description, descriptionAr, isPublished, price } = req.body;
 
     const link = await GradeSubject.findOne({ subjectId, gradeId });
     if (!link) {
@@ -277,7 +539,9 @@ export const createUnitForSubjectGrade = async (req: AuthRequest, res: Response)
 
     const count = await Unit.countDocuments({ subjectId, gradeId });
     
-    const unitData = attachCreator(req, {
+    const { assignmentId } = req.body;
+
+    const baseData: Record<string, unknown> = {
       gradeSubjectId: link._id,
       subjectId: new mongoose.Types.ObjectId(String(subjectId)),
       gradeId: new mongoose.Types.ObjectId(String(gradeId)),
@@ -285,9 +549,13 @@ export const createUnitForSubjectGrade = async (req: AuthRequest, res: Response)
       titleAr: titleAr ?? '',
       description: description ?? '',
       descriptionAr: descriptionAr ?? '',
+      price: price !== undefined ? Number(price) || 0 : undefined,
       order: count + 1,
       isPublished: isPublished ?? false,
-    });
+    };
+    if (assignmentId) baseData.assignmentId = new mongoose.Types.ObjectId(String(assignmentId));
+
+    const unitData = attachCreator(req, baseData);
 
     const unit = await Unit.create(unitData);
 
@@ -312,7 +580,7 @@ export const getUnitsBySubject = async (req: Request, res: Response) => {
 export const createUnitForSubject = async (req: Request, res: Response) => {
   try {
     const subjectId = req.params.subjectId;
-    const { title, description, gradeId } = req.body;
+    const { title, description, gradeId, assignmentId, price } = req.body;
 
     // gradeId is required because Units must be associated with a specific grade
     if (!gradeId) {
@@ -322,32 +590,27 @@ export const createUnitForSubject = async (req: Request, res: Response) => {
       return;
     }
 
-    // Find the GradeSubject junction record
+    // Find the GradeSubject junction record (may be null for new assignment-based flow)
     const gradeSubject = await GradeSubject.findOne({
       subjectId: new mongoose.Types.ObjectId(String(subjectId)),
       gradeId: new mongoose.Types.ObjectId(String(gradeId)),
     });
 
-    if (!gradeSubject) {
-      res.status(404).json({ 
-        message: 'Subject is not assigned to this grade. Please assign the subject to the grade first.' 
-      });
-      return;
-    }
+    const count = await Unit.countDocuments({ subjectId, gradeId });
 
-    const count = await Unit.countDocuments({ 
-      subjectId,
-      gradeId,
-    });
-
-    const unit = await Unit.create({
-      gradeSubjectId: gradeSubject._id,
+    const unitData: Record<string, unknown> = {
       subjectId: new mongoose.Types.ObjectId(String(subjectId)),
       gradeId: new mongoose.Types.ObjectId(String(gradeId)),
       title,
       description: description ?? '',
+      price: price !== undefined ? Number(price) || 0 : undefined,
       order: count + 1,
-    });
+    };
+
+    if (gradeSubject) unitData.gradeSubjectId = gradeSubject._id;
+    if (assignmentId) unitData.assignmentId = new mongoose.Types.ObjectId(String(assignmentId));
+
+    const unit = await Unit.create(unitData);
 
     res.status(201).json(unit);
   } catch (error: any) {

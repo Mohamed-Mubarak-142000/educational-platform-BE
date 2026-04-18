@@ -43,6 +43,12 @@ export const requireRole = (...roles: Array<'Admin' | 'Teacher' | 'Student'>) =>
  */
 export const adminOrTeacher = requireRole('Admin', 'Teacher');
 
+/**
+ * Teacher ONLY — Admin is explicitly blocked from unit/lesson write routes.
+ * Content hierarchy: Subject → Admin | Unit/Lesson → Teacher only.
+ */
+export const teacherOnly = requireRole('Teacher');
+
 // ──────────────────────────────────────────────────────────────────────────
 // Teacher Scope Validation
 // ──────────────────────────────────────────────────────────────────────────

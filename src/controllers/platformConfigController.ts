@@ -1,5 +1,11 @@
 import { Request, Response } from 'express';
 import PlatformConfig, { IPlatformConfig } from '../models/PlatformConfig';
+import User from '../models/User';
+import Lesson from '../models/Lesson';
+import LessonPart from '../models/LessonPart';
+import Unit from '../models/Unit';
+import QuizGrade from '../models/QuizGrade';
+import Subject from '../models/Subject';
 
 // ─── Default config seeded on first request ───────────────────────────────────
 
@@ -44,10 +50,10 @@ const DEFAULT_CONFIG: Omit<IPlatformConfig, keyof Document> = {
         order: 1,
         isVisible: true,
         stats: [
-          { key: 'students', labelAr: 'طالب مسجل', labelEn: 'Registered Students', value: 12000, suffix: '+', decimals: 0, iconName: 'Users' },
-          { key: 'courses', labelAr: 'دورة تعليمية', labelEn: 'Educational Courses', value: 350, suffix: '+', decimals: 0, iconName: 'BookOpen' },
-          { key: 'success', labelAr: 'معدل النجاح', labelEn: 'Success Rate', value: 98.5, suffix: '%', decimals: 1, iconName: 'TrendingUp' },
-          { key: 'teachers', labelAr: 'معلم متخصص', labelEn: 'Specialized Teachers', value: 150, suffix: '+', decimals: 0, iconName: 'GraduationCap' },
+          { key: 'students', labelAr: 'طالب مسجل', labelEn: 'Registered Students', value: 0, suffix: '+', decimals: 0, iconName: 'Users' },
+          { key: 'courses', labelAr: 'درس تعليمي', labelEn: 'Published Lessons', value: 0, suffix: '+', decimals: 0, iconName: 'BookOpen' },
+          { key: 'units', labelAr: 'وحدة دراسية', labelEn: 'Study Units', value: 0, suffix: '+', decimals: 0, iconName: 'Layers' },
+          { key: 'teachers', labelAr: 'معلم متخصص', labelEn: 'Specialized Teachers', value: 0, suffix: '+', decimals: 0, iconName: 'GraduationCap' },
         ],
       },
       {
@@ -196,5 +202,25 @@ export const resetConfig = async (req: Request, res: Response) => {
     res.json(fresh);
   } catch (err) {
     res.status(500).json({ message: 'Failed to reset platform configuration' });
+  }
+};
+
+/**
+ * GET /api/platform-config/stats
+ * Public — returns live counts used on the landing page hero/stats.
+ */
+export const getPlatformStats = async (_req: Request, res: Response) => {
+  try {
+    const [students, teachers, lessons, units, subjects] = await Promise.all([
+      User.countDocuments({ role: 'Student' }),
+      User.countDocuments({ role: 'Teacher', status: 'Active' }),
+      Lesson.countDocuments({ isPublished: true }),
+      Unit.countDocuments({ isPublished: true }),
+      Subject.countDocuments({}),
+    ]);
+
+    res.json({ students, teachers, lessons, units, subjects });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to fetch platform stats' });
   }
 };

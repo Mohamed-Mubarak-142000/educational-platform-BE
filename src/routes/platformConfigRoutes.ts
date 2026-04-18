@@ -1,8 +1,11 @@
 import express from 'express';
-import { getConfig, updateConfig, resetConfig } from '../controllers/platformConfigController';
+import { getConfig, updateConfig, resetConfig, getPlatformStats } from '../controllers/platformConfigController';
 import { protect, admin } from '../middlewares/authMiddleware';
 
 const router = express.Router();
+
+// Public — live platform stats (student count, teacher count, etc.)
+router.get('/stats', getPlatformStats);
 
 // Public — fetch full config (auto-creates default on first call)
 router.get('/', getConfig);

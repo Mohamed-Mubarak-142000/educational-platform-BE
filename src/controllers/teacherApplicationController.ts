@@ -1,5 +1,8 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import TeacherApplication from '../models/TeacherApplication';
+import TeacherAssignment from '../models/TeacherAssignment';
+import Grade from '../models/Grade';
 import User from '../models/User';
 import sendEmail from '../utils/sendEmail';
 import {
@@ -20,7 +23,7 @@ export const getTeacherApplications = async (_req: Request, res: Response) => {
 
 export const submitTeacherApplication = async (req: Request, res: Response) => {
   try {
-    const { name, email, phone, profileImageUrl, cvUrl, bio, stageId, stageIds, subjectIds, availableDays, availableHours } = req.body;
+    const { name, email, phone, profileImageUrl, cvUrl, bio, stageId, stageIds, subjectIds, gradeIds, availableDays, availableHours } = req.body;
     const application = await TeacherApplication.create({
       name,
       email,
@@ -31,6 +34,7 @@ export const submitTeacherApplication = async (req: Request, res: Response) => {
       stageId: stageId || undefined,
       stageIds: Array.isArray(stageIds) ? stageIds : (stageId ? [stageId] : []),
       subjectIds: Array.isArray(subjectIds) ? subjectIds : [],
+      gradeIds: Array.isArray(gradeIds) ? gradeIds : [],
       availableDays: availableDays || [],
       availableHours: availableHours || {},
       status: 'Pending',
@@ -91,14 +95,16 @@ export const reviewTeacherApplication = async (req: Request, res: Response) => {
 
       const tempPassword = 'Academix123456';
 
-      // Resolve stageIds and subjectIds (stored as plain strings in the application)
+      // Resolve stageIds and subjectIds
       const appStageIds = Array.isArray(application.stageIds) && application.stageIds.length > 0
         ? application.stageIds
         : application.stageId
         ? [application.stageId]
         : [];
       const appSubjectIds = Array.isArray(application.subjectIds) ? application.subjectIds : [];
+      const appGradeIds = Array.isArray((application as any).gradeIds) ? (application as any).gradeIds : [];
 
+      // ── Create Teacher User ──────────────────────────────────────
       const teacher = await User.create({
         name: application.name,
         email: application.email,
@@ -111,11 +117,39 @@ export const reviewTeacherApplication = async (req: Request, res: Response) => {
         profileImage: application.profileImageUrl || undefined,
         cvUrl: application.cvUrl || undefined,
         stageId: appStageIds[0] || undefined,
-        stageIds: appStageIds,
-        subjectIds: appSubjectIds,
+        stageIds: appStageIds.map((id: string) => new mongoose.Types.ObjectId(String(id))),
+        subjectIds: appSubjectIds.map((id: string) => new mongoose.Types.ObjectId(String(id))),
         availableDays: Array.isArray(application.availableDays) ? application.availableDays : [],
         availableHours: application.availableHours || {},
       });
+
+      // ── Auto-create TeacherAssignments ───────────────────────────
+      // Determine gradeIds: use those from the application, or fall back to
+      // all grades that belong to the teacher's stages.
+      let resolvedGradeIds: string[] = appGradeIds;
+      if (!resolvedGradeIds.length && appStageIds.length > 0) {
+        const grades = await Grade.find({ stageId: { $in: appStageIds } }).select('_id').lean();
+        resolvedGradeIds = grades.map((g) => String(g._id));
+      }
+
+      // Create one assignment per (subjectId × gradeId) — skip duplicates silently
+      for (const subjectId of appSubjectIds) {
+        for (const gradeId of resolvedGradeIds) {
+          try {
+            await TeacherAssignment.create({
+              teacherId: new mongoose.Types.ObjectId(String(teacher._id)),
+              subjectId: new mongoose.Types.ObjectId(String(subjectId)),
+              gradeId: new mongoose.Types.ObjectId(String(gradeId)),
+              isPrimary: false,
+            });
+          } catch (err: any) {
+            if (err.code !== 11000) throw err; // ignore duplicate key
+          }
+        }
+      }
+
+      // ── Delete application — teacher now lives in users only ───────────────
+      await application.deleteOne();
 
       const template = teacherApplicationAcceptedTemplate(teacher.name, teacher.email, tempPassword, teacher.subject);
       try {
@@ -129,7 +163,6 @@ export const reviewTeacherApplication = async (req: Request, res: Response) => {
         console.error('Teacher invite email failed:', error);
       }
 
-      await application.deleteOne();
       res.json({ message: 'Teacher account created.', teacherId: teacher._id });
       return;
     }

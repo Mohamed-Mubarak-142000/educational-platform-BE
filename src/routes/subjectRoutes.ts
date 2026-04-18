@@ -2,6 +2,8 @@ import express from 'express';
 import {
   getSubjects,
   getSubjectById,
+  getSubjectTeachers,
+  getSubjectTeacherContent,
   createSubject,
   updateSubject,
   deleteSubject,
@@ -15,7 +17,7 @@ import {
 import { protect, admin } from '../middlewares/authMiddleware';
 import { 
   adminOnly, 
-  adminOrTeacher, 
+  teacherOnly, 
   validateSubjectAccess 
 } from '../middlewares/rbacMiddleware';
 
@@ -24,6 +26,10 @@ const router = express.Router();
 // Subjects - Requires authentication, filtered by role
 router.route('/').get(protect, getSubjects).post(protect, adminOnly, createSubject);
 
+// Subject teachers (student flow)
+router.get('/:subjectId/teachers', protect, getSubjectTeachers);
+router.get('/:subjectId/teachers/:teacherId/content', protect, getSubjectTeacherContent);
+
 // Subject by ID - Requires authentication
 router
   .route('/:id')
@@ -31,16 +37,16 @@ router
   .put(protect, adminOnly, updateSubject)
   .delete(protect, adminOnly, deleteSubject);
 
-// Primary: grade-scoped units - Admin or assigned Teacher can create
+// Primary: grade-scoped units - Teacher only (Admin is blocked from content mutations)
 router
   .route('/:subjectId/grades/:gradeId/units')
   .get(getUnitsBySubjectAndGrade)
-  .post(protect, adminOrTeacher, validateSubjectAccess, createUnitForSubjectGrade);
+  .post(protect, teacherOnly, validateSubjectAccess, createUnitForSubjectGrade);
 
 // Legacy: subject-only units (kept during migration)
 router
   .route('/:subjectId/units')
   .get(getUnitsBySubject)
-  .post(protect, adminOrTeacher, validateSubjectAccess, createUnitForSubject);
+  .post(protect, teacherOnly, validateSubjectAccess, createUnitForSubject);
 
 export default router;
