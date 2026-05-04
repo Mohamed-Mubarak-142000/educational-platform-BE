@@ -1,7 +1,7 @@
-import Subscription from '../models/Subscription';
-import Unit from '../models/Unit';
-import Lesson from '../models/Lesson';
-import TeacherAssignment from '../models/TeacherAssignment';
+import Subscription from "../models/Subscription";
+import Unit from "../models/Unit";
+import Lesson from "../models/Lesson";
+import TeacherAssignment from "../models/TeacherAssignment";
 
 export type SubscriptionScope = {
   subjectAccess: boolean;
@@ -22,12 +22,15 @@ export const getStudentSubscriptionScope = async (params: {
     teacherId: params.teacherId,
     subjectId: params.subjectId,
     gradeId: params.gradeId,
-    status: 'Approved',
+    status: { $in: ["active", "expiring_soon"] },
+    expiresAt: { $gt: new Date() },
   }).lean();
 
-  const subjectAccess = subs.some((s: any) => s.type === 'subject');
+  const subjectAccess = subs.some((s: any) => s.type === "subject");
   const unitAccessIds = new Set(
-    subs.filter((s: any) => s.type === 'unit' && s.unitId).map((s: any) => String(s.unitId))
+    subs
+      .filter((s: any) => s.type === "unit" && s.unitId)
+      .map((s: any) => String(s.unitId)),
   );
 
   return { subjectAccess, unitAccessIds };
@@ -36,15 +39,20 @@ export const getStudentSubscriptionScope = async (params: {
 export const canAccessLesson = async (params: {
   studentId: string;
   lessonId: string;
-}): Promise<{ allowed: boolean; reason?: string; lesson?: any; unit?: any }> => {
+}): Promise<{
+  allowed: boolean;
+  reason?: string;
+  lesson?: any;
+  unit?: any;
+}> => {
   const lesson = await Lesson.findById(params.lessonId).lean();
   if (!lesson || !lesson.unitId) {
-    return { allowed: false, reason: 'Lesson not found', lesson };
+    return { allowed: false, reason: "Lesson not found", lesson };
   }
 
   const unit = await Unit.findById(lesson.unitId).lean();
   if (!unit) {
-    return { allowed: false, reason: 'Unit not found', lesson, unit };
+    return { allowed: false, reason: "Unit not found", lesson, unit };
   }
 
   if (isLessonFreePreview(unit.order ?? 0, lesson.order ?? 0)) {
@@ -53,16 +61,21 @@ export const canAccessLesson = async (params: {
 
   const firstLesson = await Lesson.find({ unitId: unit._id })
     .sort({ order: 1, createdAt: 1 })
-    .select('_id')
+    .select("_id")
     .limit(1)
     .lean();
-  if (firstLesson[0]?._id && String(firstLesson[0]._id) === String(lesson._id)) {
+  if (
+    firstLesson[0]?._id &&
+    String(firstLesson[0]._id) === String(lesson._id)
+  ) {
     return { allowed: true, lesson, unit };
   }
 
   let teacherId: string | undefined;
   if (unit.assignmentId) {
-    const assignment = await TeacherAssignment.findById(unit.assignmentId).select('teacherId').lean();
+    const assignment = await TeacherAssignment.findById(unit.assignmentId)
+      .select("teacherId")
+      .lean();
     teacherId = assignment ? String(assignment.teacherId) : undefined;
   }
   if (!teacherId && lesson.teacherId) {
@@ -70,7 +83,7 @@ export const canAccessLesson = async (params: {
   }
 
   if (!teacherId) {
-    return { allowed: false, reason: 'Teacher not resolved', lesson, unit };
+    return { allowed: false, reason: "Teacher not resolved", lesson, unit };
   }
 
   const scope = await getStudentSubscriptionScope({
@@ -85,5 +98,5 @@ export const canAccessLesson = async (params: {
     return { allowed: true, lesson, unit };
   }
 
-  return { allowed: false, reason: 'Subscription required', lesson, unit };
+  return { allowed: false, reason: "Subscription required", lesson, unit };
 };

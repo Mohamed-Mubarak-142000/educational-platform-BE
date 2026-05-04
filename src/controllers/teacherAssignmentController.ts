@@ -1,14 +1,14 @@
-import { Request, Response } from 'express';
-import mongoose from 'mongoose';
-import TeacherAssignment from '../models/TeacherAssignment';
-import Unit from '../models/Unit';
-import GradeSubject from '../models/GradeSubject';
-import User from '../models/User';
-import Grade from '../models/Grade';
-import Lesson from '../models/Lesson';
-import Quiz from '../models/Quiz';
-import UnitEnrollment from '../models/UnitEnrollment';
-import Subscription from '../models/Subscription';
+import { Request, Response } from "express";
+import mongoose from "mongoose";
+import TeacherAssignment from "../models/TeacherAssignment";
+import Unit from "../models/Unit";
+import GradeSubject from "../models/GradeSubject";
+import User from "../models/User";
+import Grade from "../models/Grade";
+import Lesson from "../models/Lesson";
+import UnitQuiz from "../models/UnitQuiz";
+import UnitEnrollment from "../models/UnitEnrollment";
+import Subscription from "../models/Subscription";
 
 // ---------------------------------------------------------------------------
 // @desc  Get all assignments (filter by teacherId / subjectId / gradeId)
@@ -23,9 +23,9 @@ export const getAssignments = async (req: Request, res: Response) => {
     if (req.query.gradeId) filter.gradeId = req.query.gradeId as string;
 
     const assignments = await TeacherAssignment.find(filter)
-      .populate('teacherId', 'name email profileImage')
-      .populate('subjectId', 'name nameAr icon color')
-      .populate('gradeId', 'name nameAr');
+      .populate("teacherId", "name email profileImage")
+      .populate("subjectId", "name nameAr icon color")
+      .populate("gradeId", "name nameAr");
 
     res.json(assignments);
   } catch (error: any) {
@@ -43,13 +43,15 @@ export const createAssignment = async (req: Request, res: Response) => {
     const { teacherId, subjectId, gradeId, isPrimary } = req.body;
 
     if (!teacherId || !subjectId || !gradeId) {
-      res.status(400).json({ message: 'teacherId, subjectId, and gradeId are required' });
+      res
+        .status(400)
+        .json({ message: "teacherId, subjectId, and gradeId are required" });
       return;
     }
 
     const teacher = await User.findById(teacherId);
-    if (!teacher || teacher.role !== 'Teacher') {
-      res.status(400).json({ message: 'User is not a Teacher' });
+    if (!teacher || teacher.role !== "Teacher") {
+      res.status(400).json({ message: "User is not a Teacher" });
       return;
     }
 
@@ -63,7 +65,9 @@ export const createAssignment = async (req: Request, res: Response) => {
     res.status(201).json(assignment);
   } catch (error: any) {
     if (error.code === 11000) {
-      res.status(409).json({ message: 'Teacher already assigned to this subject+grade' });
+      res
+        .status(409)
+        .json({ message: "Teacher already assigned to this subject+grade" });
       return;
     }
     res.status(500).json({ message: error.message });
@@ -79,11 +83,12 @@ export const updateAssignment = async (req: Request, res: Response) => {
   try {
     const assignment = await TeacherAssignment.findById(req.params.id);
     if (!assignment) {
-      res.status(404).json({ message: 'Assignment not found' });
+      res.status(404).json({ message: "Assignment not found" });
       return;
     }
 
-    if (req.body.isPrimary !== undefined) assignment.isPrimary = req.body.isPrimary;
+    if (req.body.isPrimary !== undefined)
+      assignment.isPrimary = req.body.isPrimary;
     const updated = await assignment.save();
     res.json(updated);
   } catch (error: any) {
@@ -100,10 +105,10 @@ export const deleteAssignment = async (req: Request, res: Response) => {
   try {
     const assignment = await TeacherAssignment.findByIdAndDelete(req.params.id);
     if (!assignment) {
-      res.status(404).json({ message: 'Assignment not found' });
+      res.status(404).json({ message: "Assignment not found" });
       return;
     }
-    res.json({ message: 'Assignment removed' });
+    res.json({ message: "Assignment removed" });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -119,8 +124,8 @@ export const getMyAssignments = async (req: Request, res: Response) => {
     const teacherId = (req as any).user._id;
 
     const assignments = await TeacherAssignment.find({ teacherId })
-      .populate('subjectId', 'name nameAr icon color')
-      .populate('gradeId', 'name nameAr stageId');
+      .populate("subjectId", "name nameAr icon color")
+      .populate("gradeId", "name nameAr stageId");
 
     res.json(assignments);
   } catch (error: any) {
@@ -133,15 +138,16 @@ export const getMyAssignments = async (req: Request, res: Response) => {
 // @route GET /api/teacher-assignments/public?subjectId=X&gradeId=Y
 // @access Private (any authenticated user)
 // ---------------------------------------------------------------------------
-export const getPublicAssignments = async (req: Request, res: Response) => {  try {
+export const getPublicAssignments = async (req: Request, res: Response) => {
+  try {
     const filter: Record<string, unknown> = {};
     if (req.query.subjectId) filter.subjectId = req.query.subjectId as string;
     if (req.query.gradeId) filter.gradeId = req.query.gradeId as string;
 
     const assignments = await TeacherAssignment.find(filter)
-      .populate('teacherId', 'name email bio profileImage')
-      .populate('subjectId', 'name nameAr icon color')
-      .populate('gradeId', 'name nameAr');
+      .populate("teacherId", "name email bio profileImage")
+      .populate("subjectId", "name nameAr icon color")
+      .populate("gradeId", "name nameAr");
 
     res.json(assignments);
   } catch (error: any) {
@@ -154,15 +160,21 @@ export const getPublicAssignments = async (req: Request, res: Response) => {  tr
 // @route GET /api/teacher-assignments/by-subject-stage?subjectId=X&stageId=Y
 // @access Private (any authenticated user)
 // ---------------------------------------------------------------------------
-export const getTeachersBySubjectStage = async (req: Request, res: Response) => {
+export const getTeachersBySubjectStage = async (
+  req: Request,
+  res: Response,
+) => {
   try {
-    const { subjectId, stageId } = req.query as { subjectId?: string; stageId?: string };
+    const { subjectId, stageId } = req.query as {
+      subjectId?: string;
+      stageId?: string;
+    };
     if (!subjectId || !stageId) {
-      res.status(400).json({ message: 'subjectId and stageId are required' });
+      res.status(400).json({ message: "subjectId and stageId are required" });
       return;
     }
 
-    const grades = await Grade.find({ stageId }).select('_id').lean();
+    const grades = await Grade.find({ stageId }).select("_id").lean();
     const gradeIds = grades.map((g) => g._id);
 
     if (gradeIds.length === 0) {
@@ -174,9 +186,9 @@ export const getTeachersBySubjectStage = async (req: Request, res: Response) => 
       subjectId,
       gradeId: { $in: gradeIds },
     })
-      .populate('teacherId', 'name email bio profileImage')
-      .populate('subjectId', 'name nameAr icon color')
-      .populate('gradeId', 'name nameAr stageId');
+      .populate("teacherId", "name email bio profileImage")
+      .populate("subjectId", "name nameAr icon color")
+      .populate("gradeId", "name nameAr stageId");
 
     res.json(assignments);
   } catch (error: any) {
@@ -193,39 +205,53 @@ export const getAssignmentContent = async (req: Request, res: Response) => {
   try {
     const { assignmentId } = req.params;
     const assignment = await TeacherAssignment.findById(assignmentId)
-      .populate('teacherId', 'name profileImage')
-      .populate('subjectId', 'name nameAr icon color')
-      .populate('gradeId', 'name nameAr stageId')
+      .populate("teacherId", "name profileImage")
+      .populate("subjectId", "name nameAr icon color")
+      .populate("gradeId", "name nameAr stageId")
       .lean();
 
     if (!assignment) {
-      res.status(404).json({ message: 'Assignment not found' });
+      res.status(404).json({ message: "Assignment not found" });
       return;
     }
 
     const reqUser = (req as any).user;
-    if (reqUser?.role === 'Teacher' && String(assignment.teacherId?._id || assignment.teacherId) !== String(reqUser._id)) {
-      res.status(403).json({ message: 'Not authorized for this assignment' });
+    if (
+      reqUser?.role === "Teacher" &&
+      String(assignment.teacherId?._id || assignment.teacherId) !==
+        String(reqUser._id)
+    ) {
+      res.status(403).json({ message: "Not authorized for this assignment" });
       return;
     }
 
-    const normalizedSubjectId = typeof assignment.subjectId === 'object'
-      ? String((assignment.subjectId as any)?._id ?? assignment.subjectId)
-      : String(assignment.subjectId);
-    const normalizedGradeId = typeof assignment.gradeId === 'object'
-      ? String((assignment.gradeId as any)?._id ?? assignment.gradeId)
-      : String(assignment.gradeId);
-    const normalizedTeacherId = typeof assignment.teacherId === 'object'
-      ? String((assignment.teacherId as any)?._id ?? assignment.teacherId)
-      : String(assignment.teacherId);
+    const normalizedSubjectId =
+      typeof assignment.subjectId === "object"
+        ? String((assignment.subjectId as any)?._id ?? assignment.subjectId)
+        : String(assignment.subjectId);
+    const normalizedGradeId =
+      typeof assignment.gradeId === "object"
+        ? String((assignment.gradeId as any)?._id ?? assignment.gradeId)
+        : String(assignment.gradeId);
+    const normalizedTeacherId =
+      typeof assignment.teacherId === "object"
+        ? String((assignment.teacherId as any)?._id ?? assignment.teacherId)
+        : String(assignment.teacherId);
 
-    if (typeof assignment.subjectId === 'object' || typeof assignment.gradeId === 'object' || typeof assignment.teacherId === 'object') {
-      console.warn('[getAssignmentContent] normalized populated assignment ids', {
-        assignmentId,
-        subjectId: normalizedSubjectId,
-        gradeId: normalizedGradeId,
-        teacherId: normalizedTeacherId,
-      });
+    if (
+      typeof assignment.subjectId === "object" ||
+      typeof assignment.gradeId === "object" ||
+      typeof assignment.teacherId === "object"
+    ) {
+      console.warn(
+        "[getAssignmentContent] normalized populated assignment ids",
+        {
+          assignmentId,
+          subjectId: normalizedSubjectId,
+          gradeId: normalizedGradeId,
+          teacherId: normalizedTeacherId,
+        },
+      );
     }
 
     let units = await Unit.find({ assignmentId }).sort({ order: 1 }).lean();
@@ -234,27 +260,38 @@ export const getAssignmentContent = async (req: Request, res: Response) => {
         $or: [{ assignmentId: { $exists: false } }, { assignmentId: null }],
         subjectId: normalizedSubjectId,
         gradeId: normalizedGradeId,
-      }).sort({ order: 1 }).lean();
+      })
+        .sort({ order: 1 })
+        .lean();
 
       if (legacyUnits.length > 0) {
         const legacyUnitIds = legacyUnits.map((unit) => unit._id);
-        const legacyLessons = await Lesson.find({ unitId: { $in: legacyUnitIds } })
-          .select('unitId teacherId')
+        const legacyLessons = await Lesson.find({
+          unitId: { $in: legacyUnitIds },
+        })
+          .select("unitId teacherId")
           .lean();
 
         const lessonTeacherUnitIds = new Set(
           legacyLessons
-            .filter((lesson: any) => String(lesson.teacherId) === normalizedTeacherId)
-            .map((lesson: any) => String(lesson.unitId))
+            .filter(
+              (lesson: any) => String(lesson.teacherId) === normalizedTeacherId,
+            )
+            .map((lesson: any) => String(lesson.unitId)),
         );
 
-        units = legacyUnits.filter((unit: any) =>
-          String(unit.createdBy) === normalizedTeacherId || lessonTeacherUnitIds.has(String(unit._id))
+        units = legacyUnits.filter(
+          (unit: any) =>
+            String(unit.createdBy) === normalizedTeacherId ||
+            lessonTeacherUnitIds.has(String(unit._id)),
         );
       }
     }
     const unitIds = units.map((u) => u._id);
-    let lessons = await Lesson.find({ unitId: { $in: unitIds }, isPublished: true })
+    let lessons = await Lesson.find({
+      unitId: { $in: unitIds },
+      isPublished: true,
+    })
       .sort({ order: 1, createdAt: 1 })
       .lean();
 
@@ -267,18 +304,18 @@ export const getAssignmentContent = async (req: Request, res: Response) => {
     let subjectAccess = false;
     const unitAccessIds = new Set<string>();
 
-    if (reqUser?.role === 'Student') {
+    if (reqUser?.role === "Student") {
       const subs = await Subscription.find({
         studentId: reqUser._id,
         teacherId: normalizedTeacherId,
         subjectId: normalizedSubjectId,
         gradeId: normalizedGradeId,
-        status: 'Approved',
+        status: "Approved",
       }).lean();
 
-      subjectAccess = subs.some((s: any) => s.type === 'subject');
+      subjectAccess = subs.some((s: any) => s.type === "subject");
       subs
-        .filter((s: any) => s.type === 'unit' && s.unitId)
+        .filter((s: any) => s.type === "unit" && s.unitId)
         .forEach((s: any) => unitAccessIds.add(String(s.unitId)));
     }
 
@@ -292,10 +329,15 @@ export const getAssignmentContent = async (req: Request, res: Response) => {
     const payloadUnits = units.map((unit: any) => {
       const unitLessons = lessonByUnit.get(String(unit._id)) || [];
       const unitUnlocked = subjectAccess || unitAccessIds.has(String(unit._id));
-      const firstLessonId = unitLessons[0]?._id ? String(unitLessons[0]._id) : null;
+      const firstLessonId = unitLessons[0]?._id
+        ? String(unitLessons[0]._id)
+        : null;
       const normalizedLessons = unitLessons.map((lesson: any) => {
-        const isFree = firstLessonId ? String(lesson._id) === firstLessonId : false;
-        const locked = reqUser?.role === 'Student' ? !unitUnlocked && !isFree : false;
+        const isFree = firstLessonId
+          ? String(lesson._id) === firstLessonId
+          : false;
+        const locked =
+          reqUser?.role === "Student" ? !unitUnlocked && !isFree : false;
         if (!locked) {
           return { ...lesson, isFree, locked: false, isUnlocked: true };
         }
@@ -317,7 +359,7 @@ export const getAssignmentContent = async (req: Request, res: Response) => {
 
       return {
         ...unit,
-        isUnlocked: reqUser?.role === 'Student' ? unitUnlocked : true,
+        isUnlocked: reqUser?.role === "Student" ? unitUnlocked : true,
         lessons: normalizedLessons,
       };
     });
@@ -325,9 +367,10 @@ export const getAssignmentContent = async (req: Request, res: Response) => {
     res.json({
       assignment,
       units: payloadUnits,
-      access: reqUser?.role === 'Student'
-        ? { subject: subjectAccess, unitIds: Array.from(unitAccessIds) }
-        : undefined,
+      access:
+        reqUser?.role === "Student"
+          ? { subject: subjectAccess, unitIds: Array.from(unitAccessIds) }
+          : undefined,
     });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -342,23 +385,27 @@ export const getAssignmentContent = async (req: Request, res: Response) => {
 export const createUnitForAssignment = async (req: Request, res: Response) => {
   try {
     const { assignmentId } = req.params;
-    const { title, titleAr, description, descriptionAr, isPublished, price } = req.body;
+    const { title, titleAr, description, descriptionAr, isPublished, price } =
+      req.body;
 
     if (!title) {
-      res.status(400).json({ message: 'title is required' });
+      res.status(400).json({ message: "title is required" });
       return;
     }
 
     const assignment = await TeacherAssignment.findById(assignmentId);
     if (!assignment) {
-      res.status(404).json({ message: 'Assignment not found' });
+      res.status(404).json({ message: "Assignment not found" });
       return;
     }
 
     // Verify teacher ownership unless admin
     const reqUser = (req as any).user;
-    if (reqUser?.role === 'Teacher' && String(assignment.teacherId) !== String(reqUser._id)) {
-      res.status(403).json({ message: 'Not authorized for this assignment' });
+    if (
+      reqUser?.role === "Teacher" &&
+      String(assignment.teacherId) !== String(reqUser._id)
+    ) {
+      res.status(403).json({ message: "Not authorized for this assignment" });
       return;
     }
 
@@ -378,9 +425,9 @@ export const createUnitForAssignment = async (req: Request, res: Response) => {
       subjectId: assignment.subjectId,
       gradeId: assignment.gradeId,
       title,
-      titleAr: titleAr ?? '',
-      description: description ?? '',
-      descriptionAr: descriptionAr ?? '',
+      titleAr: titleAr ?? "",
+      description: description ?? "",
+      descriptionAr: descriptionAr ?? "",
       price: price !== undefined ? Number(price) || 0 : undefined,
       order: count + 1,
       isPublished: isPublished ?? false,
@@ -405,7 +452,7 @@ export const getUnitsForAssignment = async (req: Request, res: Response) => {
     const { assignmentId } = req.params;
     const assignment = await TeacherAssignment.findById(assignmentId);
     if (!assignment) {
-      res.status(404).json({ message: 'Assignment not found' });
+      res.status(404).json({ message: "Assignment not found" });
       return;
     }
 
@@ -428,32 +475,42 @@ export const getTeacherDashboard = async (req: Request, res: Response) => {
     // 1. Teacher assignments → unique subjects, grades
     const assignments = await TeacherAssignment.find({ teacherId }).lean();
     const assignmentIds = assignments.map((a) => a._id);
-    const subjectIds = [...new Set(assignments.map((a) => String(a.subjectId)))];
+    const subjectIds = [
+      ...new Set(assignments.map((a) => String(a.subjectId))),
+    ];
     const gradeIds = [...new Set(assignments.map((a) => String(a.gradeId)))];
 
     // 2. Unique stages from grades
-    const grades = await Grade.find({ _id: { $in: gradeIds } }).select('stageId').lean();
-    const stageIds = [...new Set(grades.map((g) => String(g.stageId)).filter(Boolean))];
+    const grades = await Grade.find({ _id: { $in: gradeIds } })
+      .select("stageId")
+      .lean();
+    const stageIds = [
+      ...new Set(grades.map((g) => String(g.stageId)).filter(Boolean)),
+    ];
 
     // 3. Units owned by this teacher (linked via assignmentId)
     const units = await Unit.find({ assignmentId: { $in: assignmentIds } })
-      .select('_id createdAt')
+      .select("_id createdAt")
       .lean();
     const unitIds = units.map((u) => u._id);
 
     // 4. Lessons in those units
     const lessons = await Lesson.find({ unitId: { $in: unitIds } })
-      .select('_id createdAt')
+      .select("_id createdAt")
       .lean();
     const lessonIds = lessons.map((l) => l._id);
 
-    // 5. Quizzes linked to those lessons
-    const quizzesCount = await Quiz.countDocuments({ lessonId: { $in: lessonIds } });
+    // 5. Quizzes linked to those units
+    const quizzesCount = await UnitQuiz.countDocuments({
+      unitId: { $in: unitIds },
+    });
 
     // 6. Unique students enrolled in teacher's units
     const studentIdList =
       unitIds.length > 0
-        ? await UnitEnrollment.distinct('studentId', { unitId: { $in: unitIds } })
+        ? await UnitEnrollment.distinct("studentId", {
+            unitId: { $in: unitIds },
+          })
         : [];
 
     // 7. Student growth — distinct enrolled students grouped by month (last 6 months)
@@ -465,19 +522,27 @@ export const getTeacherDashboard = async (req: Request, res: Response) => {
     const studentGrowth =
       unitIds.length > 0
         ? await UnitEnrollment.aggregate([
-            { $match: { unitId: { $in: unitIds }, createdAt: { $gte: sixMonthsAgo } } },
+            {
+              $match: {
+                unitId: { $in: unitIds },
+                createdAt: { $gte: sixMonthsAgo },
+              },
+            },
             {
               $group: {
-                _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
-                students: { $addToSet: '$studentId' },
+                _id: {
+                  year: { $year: "$createdAt" },
+                  month: { $month: "$createdAt" },
+                },
+                students: { $addToSet: "$studentId" },
               },
             },
             {
               $project: {
                 _id: 0,
-                year: '$_id.year',
-                month: '$_id.month',
-                count: { $size: '$students' },
+                year: "$_id.year",
+                month: "$_id.month",
+                count: { $size: "$students" },
               },
             },
             { $sort: { year: 1, month: 1 } },
@@ -488,18 +553,26 @@ export const getTeacherDashboard = async (req: Request, res: Response) => {
     const contentStats =
       lessonIds.length > 0
         ? await Lesson.aggregate([
-            { $match: { unitId: { $in: unitIds }, createdAt: { $gte: sixMonthsAgo } } },
+            {
+              $match: {
+                unitId: { $in: unitIds },
+                createdAt: { $gte: sixMonthsAgo },
+              },
+            },
             {
               $group: {
-                _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
+                _id: {
+                  year: { $year: "$createdAt" },
+                  month: { $month: "$createdAt" },
+                },
                 count: { $sum: 1 },
               },
             },
             {
               $project: {
                 _id: 0,
-                year: '$_id.year',
-                month: '$_id.month',
+                year: "$_id.year",
+                month: "$_id.month",
                 count: 1,
               },
             },

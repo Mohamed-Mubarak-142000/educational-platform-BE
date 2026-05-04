@@ -1,31 +1,42 @@
-import { Request, Response } from 'express';
-import crypto from 'crypto';
-import User from '../models/User';
-import Course from '../models/Course';
-import Enrollment from '../models/Enrollment';
-import Subject from '../models/Subject';
-import Unit from '../models/Unit';
-import UnitEnrollment from '../models/UnitEnrollment';
-import SubjectProgress from '../models/SubjectProgress';
-import TeacherSchedule from '../models/TeacherSchedule';
-import TeacherAssignment from '../models/TeacherAssignment';
-import Stage from '../models/Stage';
-import Grade from '../models/Grade';
-import sendEmail from '../utils/sendEmail';
-import generateToken from '../utils/generateToken';
-import { otpTemplate, resetPasswordTemplate, teacherInviteTemplate, studentInviteTemplate } from '../utils/emailTemplates';
+import { Request, Response } from "express";
+import crypto from "crypto";
+import User from "../models/User";
+import Subject from "../models/Subject";
+import Unit from "../models/Unit";
+import UnitEnrollment from "../models/UnitEnrollment";
+import SubjectProgress from "../models/SubjectProgress";
+import TeacherSchedule from "../models/TeacherSchedule";
+import TeacherAssignment from "../models/TeacherAssignment";
+import Stage from "../models/Stage";
+import Grade from "../models/Grade";
+import sendEmail from "../utils/sendEmail";
+import generateToken from "../utils/generateToken";
+import {
+  otpTemplate,
+  resetPasswordTemplate,
+  teacherInviteTemplate,
+  studentInviteTemplate,
+} from "../utils/emailTemplates";
 
 // @desc    Register a new user
 // @route   POST /api/users/register
 // @access  Public
 export const registerUser = async (req: Request, res: Response) => {
   try {
-    const { name, email, password, phone, parentEmail, stageId, subscribeLiveLessons } = req.body;
+    const {
+      name,
+      email,
+      password,
+      phone,
+      parentEmail,
+      stageId,
+      subscribeLiveLessons,
+    } = req.body;
 
     const userExists = await User.findOne({ email });
 
     if (userExists) {
-      res.status(400).json({ message: 'User already exists' });
+      res.status(400).json({ message: "User already exists" });
       return;
     }
 
@@ -36,11 +47,12 @@ export const registerUser = async (req: Request, res: Response) => {
       name,
       email,
       password,
-      role: 'Student',
+      role: "Student",
       ...(phone && { phone }),
       ...(parentEmail && { parentEmail }),
       ...(stageId && { stageId }),
-      subscribeLiveLessons: subscribeLiveLessons === true || subscribeLiveLessons === 'true',
+      subscribeLiveLessons:
+        subscribeLiveLessons === true || subscribeLiveLessons === "true",
       otp,
       otpExpires,
       otpLastSent: new Date(),
@@ -56,18 +68,18 @@ export const registerUser = async (req: Request, res: Response) => {
           html: template.html,
         });
       } catch (error) {
-        console.error('Email could not be sent', error);
+        console.error("Email could not be sent", error);
       }
 
       res.status(201).json({
-        message: 'User registered. Please check email for OTP.',
+        message: "User registered. Please check email for OTP.",
         _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
       });
     } else {
-      res.status(400).json({ message: 'Invalid user data' });
+      res.status(400).json({ message: "Invalid user data" });
     }
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -83,19 +95,29 @@ export const resendOTP = async (req: Request, res: Response) => {
 
     const user = await User.findOne({ email });
     if (!user) {
-      res.status(404).json({ message: 'User not found' });
+      res.status(404).json({ message: "User not found" });
       return;
     }
 
     if (user.isVerified) {
-      res.status(400).json({ message: 'User already verified' });
+      res.status(400).json({ message: "User already verified" });
       return;
     }
 
     const cooldownMs = 60 * 1000;
-    if (user.otpLastSent && Date.now() - user.otpLastSent.getTime() < cooldownMs) {
-      const remaining = Math.ceil((cooldownMs - (Date.now() - user.otpLastSent.getTime())) / 1000);
-      res.status(429).json({ message: `Please wait ${remaining} seconds before requesting a new OTP.`, retryAfterSeconds: remaining });
+    if (
+      user.otpLastSent &&
+      Date.now() - user.otpLastSent.getTime() < cooldownMs
+    ) {
+      const remaining = Math.ceil(
+        (cooldownMs - (Date.now() - user.otpLastSent.getTime())) / 1000,
+      );
+      res
+        .status(429)
+        .json({
+          message: `Please wait ${remaining} seconds before requesting a new OTP.`,
+          retryAfterSeconds: remaining,
+        });
       return;
     }
 
@@ -114,10 +136,10 @@ export const resendOTP = async (req: Request, res: Response) => {
         html: template.html,
       });
     } catch (error) {
-      console.error('Email could not be sent', error);
+      console.error("Email could not be sent", error);
     }
 
-    res.json({ message: 'OTP resent. Please check your email.' });
+    res.json({ message: "OTP resent. Please check your email." });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -133,17 +155,17 @@ export const verifyOTP = async (req: Request, res: Response) => {
     const user = await User.findOne({ email });
 
     if (!user) {
-      res.status(404).json({ message: 'User not found' });
+      res.status(404).json({ message: "User not found" });
       return;
     }
 
     if (user.isVerified) {
-      res.status(400).json({ message: 'User already verified' });
+      res.status(400).json({ message: "User already verified" });
       return;
     }
 
     if (user.otp !== otp || (user.otpExpires && user.otpExpires < new Date())) {
-      res.status(400).json({ message: 'Invalid or expired OTP' });
+      res.status(400).json({ message: "Invalid or expired OTP" });
       return;
     }
 
@@ -176,7 +198,7 @@ export const loginUser = async (req: Request, res: Response) => {
 
     if (user && (await user.matchPassword(password))) {
       if (!user.isVerified) {
-        res.status(401).json({ message: 'Please verify your email first' });
+        res.status(401).json({ message: "Please verify your email first" });
         return;
       }
       res.json({
@@ -188,7 +210,7 @@ export const loginUser = async (req: Request, res: Response) => {
         token: generateToken(String(user._id)),
       });
     } else {
-      res.status(401).json({ message: 'Invalid email or password' });
+      res.status(401).json({ message: "Invalid email or password" });
     }
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -200,7 +222,9 @@ export const loginUser = async (req: Request, res: Response) => {
 // @access  Private
 export const getUserProfile = async (req: any, res: Response) => {
   try {
-    const user = await User.findById(req.user._id).select('-password -otp -otpExpires -otpLastSent -resetPasswordToken -resetPasswordExpires');
+    const user = await User.findById(req.user._id).select(
+      "-password -otp -otpExpires -otpLastSent -resetPasswordToken -resetPasswordExpires",
+    );
 
     if (user) {
       const obj = user.toObject({ flattenMaps: true }) as any;
@@ -219,14 +243,12 @@ export const getUserProfile = async (req: any, res: Response) => {
         status: obj.status,
         isVerified: obj.isVerified,
         mustChangePassword: obj.mustChangePassword,
-        stageIds: obj.stageIds,
-        subjectIds: obj.subjectIds,
         bio: obj.bio,
         availableDays: obj.availableDays,
         availableHours: obj.availableHours,
       });
     } else {
-      res.status(404).json({ message: 'User not found' });
+      res.status(404).json({ message: "User not found" });
     }
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -240,7 +262,9 @@ export const getMySubscribedSubjects = async (req: any, res: Response) => {
   try {
     const studentId = req.user._id;
 
-    const enrollments = await UnitEnrollment.find({ studentId }).select('unitId').lean();
+    const enrollments = await UnitEnrollment.find({ studentId })
+      .select("unitId")
+      .lean();
     if (enrollments.length === 0) {
       res.json([]);
       return;
@@ -248,11 +272,11 @@ export const getMySubscribedSubjects = async (req: any, res: Response) => {
 
     const unitIds = enrollments.map((e) => e.unitId);
     const units = await Unit.find({ _id: { $in: unitIds } })
-      .select('subjectId gradeId')
+      .select("subjectId gradeId")
       .lean();
 
     const subjectIds = Array.from(
-      new Set(units.map((unit) => String(unit.subjectId)).filter(Boolean))
+      new Set(units.map((unit) => String(unit.subjectId)).filter(Boolean)),
     );
 
     if (subjectIds.length === 0) {
@@ -268,7 +292,7 @@ export const getMySubscribedSubjects = async (req: any, res: Response) => {
       studentId,
       subjectId: { $in: subjectIds },
     })
-      .select('subjectId percentage')
+      .select("subjectId percentage")
       .lean();
 
     const progressMap = new Map<string, number>();
@@ -300,37 +324,39 @@ export const updateUserProfile = async (req: any, res: Response) => {
   try {
     const user = await User.findById(req.user._id);
     if (!user) {
-      res.status(404).json({ message: 'User not found' });
+      res.status(404).json({ message: "User not found" });
       return;
     }
 
     // When sent as multipart/form-data, arrays and objects arrive as JSON strings
     const parseField = (v: any) => {
-      if (typeof v === 'string') { try { return JSON.parse(v); } catch { return v; } }
+      if (typeof v === "string") {
+        try {
+          return JSON.parse(v);
+        } catch {
+          return v;
+        }
+      }
       return v;
     };
 
     const { name, phone, stageId, profileImage, bio } = req.body;
     const availableDays = parseField(req.body.availableDays);
     const availableHours = parseField(req.body.availableHours);
-    const stageIds = parseField(req.body.stageIds);
-    const subjectIds = parseField(req.body.subjectIds);
 
     if (name !== undefined) user.name = name;
     if (phone !== undefined) user.phone = phone;
     if (stageId !== undefined) user.stageId = stageId || undefined;
     if (bio !== undefined) user.bio = bio;
-    if (availableDays !== undefined) user.availableDays = Array.isArray(availableDays) ? availableDays : [];
+    if (availableDays !== undefined)
+      user.availableDays = Array.isArray(availableDays) ? availableDays : [];
     if (availableHours !== undefined) user.availableHours = availableHours;
-
-    // Academic fields (teacher-specific)
-    if (stageIds !== undefined) user.stageIds = Array.isArray(stageIds) ? stageIds : [];
-    if (subjectIds !== undefined) user.subjectIds = Array.isArray(subjectIds) ? subjectIds : [];
 
     // Profile image: prefer uploaded file, fall back to URL from body
     if (req.file) {
       const uploaded = req.file as any;
-      user.profileImage = uploaded.path || uploaded.secure_url || uploaded.url || '';
+      user.profileImage =
+        uploaded.path || uploaded.secure_url || uploaded.url || "";
     } else if (profileImage !== undefined) {
       user.profileImage = profileImage;
     }
@@ -344,8 +370,6 @@ export const updateUserProfile = async (req: any, res: Response) => {
       role: obj.role,
       phone: obj.phone,
       stageId: obj.stageId,
-      stageIds: obj.stageIds,
-      subjectIds: obj.subjectIds,
       profileImage: obj.profileImage,
       status: obj.status,
       bio: obj.bio,
@@ -363,36 +387,50 @@ export const updateUserProfile = async (req: any, res: Response) => {
 // @access  Private/Admin
 export const createTeacher = async (req: Request, res: Response) => {
   try {
-    const { name, email, phone, subject, stageId, stageIds, subjectIds, status, profileImage, cvUrl, availableDays, availableHours } = req.body;
+    const {
+      name,
+      email,
+      phone,
+      subject,
+      stageId,
+      status,
+      profileImage,
+      cvUrl,
+      availableDays,
+      availableHours,
+    } = req.body;
 
     const userExists = await User.findOne({ email });
     if (userExists) {
-      res.status(400).json({ message: 'User already exists' });
+      res.status(400).json({ message: "User already exists" });
       return;
     }
 
-    const tempPassword = 'Academix123456';
+    const tempPassword = "Academix123456";
 
     const teacher = await User.create({
       name,
       email,
       password: tempPassword,
-      role: 'Teacher',
+      role: "Teacher",
       isVerified: true,
       mustChangePassword: true,
       phone,
       subject,
       stageId: stageId || undefined,
-      stageIds: Array.isArray(stageIds) ? stageIds : (stageId ? [stageId] : []),
-      subjectIds: Array.isArray(subjectIds) ? subjectIds : [],
-      status: status || 'Active',
+      status: status || "Active",
       profileImage: profileImage || undefined,
       cvUrl: cvUrl || undefined,
       availableDays: Array.isArray(availableDays) ? availableDays : [],
       availableHours: availableHours || {},
     });
 
-    const template = teacherInviteTemplate(teacher.name, teacher.email, tempPassword, teacher.subject);
+    const template = teacherInviteTemplate(
+      teacher.name,
+      teacher.email,
+      tempPassword,
+      teacher.subject,
+    );
     try {
       await sendEmail({
         email: teacher.email,
@@ -401,7 +439,7 @@ export const createTeacher = async (req: Request, res: Response) => {
         html: template.html,
       });
     } catch (error) {
-      console.error('Email could not be sent', error);
+      console.error("Email could not be sent", error);
     }
 
     res.status(201).json({
@@ -412,8 +450,6 @@ export const createTeacher = async (req: Request, res: Response) => {
       phone: teacher.phone,
       subject: teacher.subject,
       stageId: teacher.stageId,
-      stageIds: teacher.stageIds,
-      subjectIds: teacher.subjectIds,
       status: teacher.status,
       profileImage: teacher.profileImage,
       cvUrl: teacher.cvUrl,
@@ -431,32 +467,46 @@ export const createTeacher = async (req: Request, res: Response) => {
 // @access  Private/Admin
 export const createStudent = async (req: Request, res: Response) => {
   try {
-    const { name, email, phone, status, stageId, subscribeLiveLessons, parentEmail, profileImage } = req.body;
+    const {
+      name,
+      email,
+      phone,
+      status,
+      stageId,
+      subscribeLiveLessons,
+      parentEmail,
+      profileImage,
+    } = req.body;
 
     const userExists = await User.findOne({ email });
     if (userExists) {
-      res.status(400).json({ message: 'User already exists' });
+      res.status(400).json({ message: "User already exists" });
       return;
     }
 
-    const tempPassword = crypto.randomBytes(8).toString('hex');
+    const tempPassword = crypto.randomBytes(8).toString("hex");
 
     const student = await User.create({
       name,
       email,
       password: tempPassword,
-      role: 'Student',
+      role: "Student",
       isVerified: true,
       mustChangePassword: true,
       phone,
-      status: status || 'Active',
+      status: status || "Active",
       stageId: stageId || undefined,
-      subscribeLiveLessons: subscribeLiveLessons === 'true' || subscribeLiveLessons === true,
+      subscribeLiveLessons:
+        subscribeLiveLessons === "true" || subscribeLiveLessons === true,
       parentEmail: parentEmail || undefined,
       profileImage: profileImage || undefined,
     });
 
-    const template = studentInviteTemplate(student.name, student.email, tempPassword);
+    const template = studentInviteTemplate(
+      student.name,
+      student.email,
+      tempPassword,
+    );
     try {
       await sendEmail({
         email: student.email,
@@ -465,7 +515,7 @@ export const createStudent = async (req: Request, res: Response) => {
         html: template.html,
       });
     } catch (error) {
-      console.error('Email could not be sent', error);
+      console.error("Email could not be sent", error);
     }
 
     res.status(201).json({
@@ -492,20 +542,24 @@ const applyUserUpdates = (user: any, updates: any) => {
   if (updates.phone !== undefined) user.phone = updates.phone;
   if (updates.subject !== undefined) user.subject = updates.subject;
   if (updates.status !== undefined) user.status = updates.status;
-  if (updates.profileImage !== undefined) user.profileImage = updates.profileImage;
+  if (updates.profileImage !== undefined)
+    user.profileImage = updates.profileImage;
   if (updates.cvUrl !== undefined) user.cvUrl = updates.cvUrl;
   if (updates.bio !== undefined) user.bio = updates.bio;
-  if (updates.availableDays !== undefined) user.availableDays = updates.availableDays;
-  if (updates.availableHours !== undefined) user.availableHours = updates.availableHours;
-  // Teacher assignment fields
-  if (updates.stageIds !== undefined) user.stageIds = Array.isArray(updates.stageIds) ? updates.stageIds : [];
-  if (updates.subjectIds !== undefined) user.subjectIds = Array.isArray(updates.subjectIds) ? updates.subjectIds : [];
+  if (updates.availableDays !== undefined)
+    user.availableDays = updates.availableDays;
+  if (updates.availableHours !== undefined)
+    user.availableHours = updates.availableHours;
   // Student-specific fields
-  if (updates.stageId !== undefined) user.stageId = updates.stageId || undefined;
+  if (updates.stageId !== undefined)
+    user.stageId = updates.stageId || undefined;
   if (updates.subscribeLiveLessons !== undefined) {
-    user.subscribeLiveLessons = updates.subscribeLiveLessons === 'true' || updates.subscribeLiveLessons === true;
+    user.subscribeLiveLessons =
+      updates.subscribeLiveLessons === "true" ||
+      updates.subscribeLiveLessons === true;
   }
-  if (updates.parentEmail !== undefined) user.parentEmail = updates.parentEmail || undefined;
+  if (updates.parentEmail !== undefined)
+    user.parentEmail = updates.parentEmail || undefined;
 };
 
 // @desc    Get teachers
@@ -513,37 +567,40 @@ const applyUserUpdates = (user: any, updates: any) => {
 // @access  Private/Admin
 export const getTeachers = async (_req: Request, res: Response) => {
   try {
-    const teachers = await User.find({ role: 'Teacher' }).select('-password');
+    const teachers = await User.find({ role: "Teacher" }).select("-password");
     res.json(teachers);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
 };
 
-
 // @desc    Get students enrolled in the logged-in teacher's courses
 // @route   GET /api/users/my-students
 // @access  Private/Teacher
 export const getMyStudents = async (req: any, res: Response) => {
   try {
-    const courses = await Course.find({ teacherId: req.user._id }).select('_id');
-    const courseIds = courses.map((c: any) => c._id);
-
-    const enrollments = await Enrollment.find({ courseId: { $in: courseIds } })
-      .populate('studentId', '_id name email phone profileImage stageId status createdAt')
+    const assignments = await TeacherAssignment.find({
+      teacherId: req.user._id,
+    })
+      .select("_id")
       .lean();
-
+    const assignmentIds = assignments.map((a: any) => a._id);
+    const enrollments = await UnitEnrollment.find({
+      assignmentId: { $in: assignmentIds },
+    })
+      .populate(
+        "studentId",
+        "_id name email phone profileImage stageId status createdAt",
+      )
+      .lean();
     const uniqueStudentsMap = new Map<string, any>();
     for (const enrollment of enrollments) {
       const student = enrollment.studentId as any;
       if (student && student._id) {
         const key = String(student._id);
-        if (!uniqueStudentsMap.has(key)) {
-          uniqueStudentsMap.set(key, student);
-        }
+        if (!uniqueStudentsMap.has(key)) uniqueStudentsMap.set(key, student);
       }
     }
-
     res.json(Array.from(uniqueStudentsMap.values()));
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -555,22 +612,22 @@ export const getMyStudents = async (req: any, res: Response) => {
 // @access  Private/Admin
 export const getTeacherById = async (req: Request, res: Response) => {
   try {
-    const teacher = await User.findOne({ _id: req.params.id, role: 'Teacher' })
-      .select('-password')
-      .populate('stageIds', 'name nameAr icon color')
-      .populate('subjectIds', 'name nameAr icon color description');
+    const teacher = await User.findOne({
+      _id: req.params.id,
+      role: "Teacher",
+    }).select("-password");
     if (!teacher) {
-      res.status(404).json({ message: 'Teacher not found' });
+      res.status(404).json({ message: "Teacher not found" });
       return;
     }
 
     // ── Derive academic data from TeacherAssignments (authoritative source) ──
     const assignments = await TeacherAssignment.find({ teacherId: teacher._id })
-      .populate('subjectId', 'name nameAr icon color description')
+      .populate("subjectId", "name nameAr icon color description")
       .populate({
-        path: 'gradeId',
-        select: 'name nameAr order stageId',
-        populate: { path: 'stageId', select: 'name nameAr icon color' },
+        path: "gradeId",
+        select: "name nameAr order stageId",
+        populate: { path: "stageId", select: "name nameAr icon color" },
       })
       .lean();
 
@@ -582,45 +639,69 @@ export const getTeacherById = async (req: Request, res: Response) => {
       const grade = a.gradeId as any;
       const subject = a.subjectId as any;
       if (grade && grade._id) gradeMap.set(String(grade._id), grade);
-      if (grade?.stageId && grade.stageId._id) stageMap.set(String(grade.stageId._id), grade.stageId);
+      if (grade?.stageId && grade.stageId._id)
+        stageMap.set(String(grade.stageId._id), grade.stageId);
       if (subject && subject._id) subjectMap.set(String(subject._id), subject);
     }
     const assignmentGrades = Array.from(gradeMap.values());
     const assignmentStages = Array.from(stageMap.values());
     const assignmentSubjects = Array.from(subjectMap.values());
-    const subjects = await Subject.find({ teacherId: teacher._id }).sort({ createdAt: 1 });
+    const subjects = await Subject.find({ teacherId: teacher._id }).sort({
+      createdAt: 1,
+    });
     const subjectDetails = await Promise.all(
       subjects.map(async (subject) => {
-        const units = await Unit.find({ subjectId: subject._id }).select('_id');
+        const units = await Unit.find({ subjectId: subject._id }).select("_id");
         const unitIds = units.map((unit) => unit._id);
-        const studentIds = unitIds.length > 0
-          ? await UnitEnrollment.distinct('studentId', { unitId: { $in: unitIds } })
-          : [];
+        const studentIds =
+          unitIds.length > 0
+            ? await UnitEnrollment.distinct("studentId", {
+                unitId: { $in: unitIds },
+              })
+            : [];
         return {
           ...subject.toObject(),
           studentCount: studentIds.length,
         };
-      })
+      }),
     );
 
-    const allUnitIds = subjectDetails.length > 0
-      ? await Unit.find({ subjectId: { $in: subjectDetails.map((s) => s._id) } }).distinct('_id')
-      : [];
-    const totalStudentCount = allUnitIds.length > 0
-      ? (await UnitEnrollment.distinct('studentId', { unitId: { $in: allUnitIds } })).length
-      : 0;
+    const allUnitIds =
+      subjectDetails.length > 0
+        ? await Unit.find({
+            subjectId: { $in: subjectDetails.map((s) => s._id) },
+          }).distinct("_id")
+        : [];
+    const totalStudentCount =
+      allUnitIds.length > 0
+        ? (
+            await UnitEnrollment.distinct("studentId", {
+              unitId: { $in: allUnitIds },
+            })
+          ).length
+        : 0;
 
     const schedules = await TeacherSchedule.find({ teacherId: teacher._id })
-      .populate('subjectId', 'name')
+      .populate("subjectId", "name")
       .sort({ day: 1, startTime: 1 });
 
     const teacherObj = teacher.toObject({ flattenMaps: true });
 
-    const availableHoursRaw = teacherObj.availableHours as unknown as Record<string, { start?: string; end?: string }> | undefined;
-    const resolvedAvailableHours: Record<string, { start?: string; end?: string }> =
-      availableHoursRaw && Object.keys(availableHoursRaw).length > 0 ? availableHoursRaw : {};
-    const resolvedAvailableDays: string[] =
-      Array.isArray(teacherObj.availableDays) ? teacherObj.availableDays : [];
+    const availableHoursRaw = teacherObj.availableHours as unknown as
+      | Record<string, { start?: string; end?: string }>
+      | undefined;
+    const resolvedAvailableHours: Record<
+      string,
+      { start?: string; end?: string }
+    > =
+      availableHoursRaw && Object.keys(availableHoursRaw).length > 0
+        ? availableHoursRaw
+        : {};
+    const resolvedAvailableDays: string[] = Array.isArray(
+      teacherObj.availableDays,
+    )
+      ? teacherObj.availableDays
+      : [];
 
     res.json({
       ...teacherObj,
@@ -645,9 +726,9 @@ export const getTeacherById = async (req: Request, res: Response) => {
 // @access  Private/Admin
 export const updateTeacher = async (req: Request, res: Response) => {
   try {
-    const teacher = await User.findOne({ _id: req.params.id, role: 'Teacher' });
+    const teacher = await User.findOne({ _id: req.params.id, role: "Teacher" });
     if (!teacher) {
-      res.status(404).json({ message: 'Teacher not found' });
+      res.status(404).json({ message: "Teacher not found" });
       return;
     }
 
@@ -662,8 +743,6 @@ export const updateTeacher = async (req: Request, res: Response) => {
       phone: updatedObj.phone,
       subject: updatedObj.subject,
       stageId: updatedObj.stageId,
-      stageIds: updatedObj.stageIds,
-      subjectIds: updatedObj.subjectIds,
       bio: updatedObj.bio,
       status: updatedObj.status,
       profileImage: updatedObj.profileImage,
@@ -681,13 +760,13 @@ export const updateTeacher = async (req: Request, res: Response) => {
 // @access  Private/Admin
 export const deleteTeacher = async (req: Request, res: Response) => {
   try {
-    const teacher = await User.findOne({ _id: req.params.id, role: 'Teacher' });
+    const teacher = await User.findOne({ _id: req.params.id, role: "Teacher" });
     if (!teacher) {
-      res.status(404).json({ message: 'Teacher not found' });
+      res.status(404).json({ message: "Teacher not found" });
       return;
     }
     await teacher.deleteOne();
-    res.json({ message: 'Teacher removed' });
+    res.json({ message: "Teacher removed" });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -698,7 +777,7 @@ export const deleteTeacher = async (req: Request, res: Response) => {
 // @access  Private/Admin
 export const getStudents = async (_req: Request, res: Response) => {
   try {
-    const students = await User.find({ role: 'Student' }).select('-password');
+    const students = await User.find({ role: "Student" }).select("-password");
     res.json(students);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -710,24 +789,31 @@ export const getStudents = async (_req: Request, res: Response) => {
 // @access  Private/Admin
 export const getStudentById = async (req: Request, res: Response) => {
   try {
-    const student = await User.findOne({ _id: req.params.id, role: 'Student' }).select('-password');
+    const student = await User.findOne({
+      _id: req.params.id,
+      role: "Student",
+    }).select("-password");
     if (!student) {
-      res.status(404).json({ message: 'Student not found' });
+      res.status(404).json({ message: "Student not found" });
       return;
     }
-    const enrollments = await UnitEnrollment.find({ studentId: student._id }).select('unitId');
+    const enrollments = await UnitEnrollment.find({
+      studentId: student._id,
+    }).select("unitId");
     const unitIds = enrollments.map((enrollment) => enrollment.unitId);
-    const units = unitIds.length > 0
-      ? await Unit.find({ _id: { $in: unitIds } }).select('subjectId')
-      : [];
+    const units =
+      unitIds.length > 0
+        ? await Unit.find({ _id: { $in: unitIds } }).select("subjectId")
+        : [];
     const subjectIds = Array.from(
-      new Set(units.map((unit) => String(unit.subjectId)))
+      new Set(units.map((unit) => String(unit.subjectId))),
     );
-    const subscribedSubjects = subjectIds.length > 0
-      ? await Subject.find({ _id: { $in: subjectIds } })
-        .populate('teacherId', 'name')
-        .sort({ createdAt: 1 })
-      : [];
+    const subscribedSubjects =
+      subjectIds.length > 0
+        ? await Subject.find({ _id: { $in: subjectIds } })
+            .populate("teacherId", "name")
+            .sort({ createdAt: 1 })
+        : [];
 
     res.json({
       ...student.toObject(),
@@ -743,9 +829,9 @@ export const getStudentById = async (req: Request, res: Response) => {
 // @access  Private/Admin
 export const updateStudent = async (req: Request, res: Response) => {
   try {
-    const student = await User.findOne({ _id: req.params.id, role: 'Student' });
+    const student = await User.findOne({ _id: req.params.id, role: "Student" });
     if (!student) {
-      res.status(404).json({ message: 'Student not found' });
+      res.status(404).json({ message: "Student not found" });
       return;
     }
 
@@ -773,13 +859,13 @@ export const updateStudent = async (req: Request, res: Response) => {
 // @access  Private/Admin
 export const deleteStudent = async (req: Request, res: Response) => {
   try {
-    const student = await User.findOne({ _id: req.params.id, role: 'Student' });
+    const student = await User.findOne({ _id: req.params.id, role: "Student" });
     if (!student) {
-      res.status(404).json({ message: 'Student not found' });
+      res.status(404).json({ message: "Student not found" });
       return;
     }
     await student.deleteOne();
-    res.json({ message: 'Student removed' });
+    res.json({ message: "Student removed" });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -789,7 +875,7 @@ export const deleteStudent = async (req: Request, res: Response) => {
 // @route   POST /api/users/logout
 // @access  Public
 export const logoutUser = async (_req: Request, res: Response) => {
-  res.json({ message: 'Logged out' });
+  res.json({ message: "Logged out" });
 };
 
 // @desc    Request password reset
@@ -801,18 +887,21 @@ export const forgotPassword = async (req: Request, res: Response) => {
 
     const user = await User.findOne({ email });
     if (!user) {
-      res.json({ message: 'If the email exists, a reset link was sent.' });
+      res.json({ message: "If the email exists, a reset link was sent." });
       return;
     }
 
-    const resetToken = crypto.randomBytes(20).toString('hex');
-    const resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+    const resetToken = crypto.randomBytes(20).toString("hex");
+    const resetPasswordToken = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex");
 
     user.resetPasswordToken = resetPasswordToken;
     user.resetPasswordExpires = new Date(Date.now() + 10 * 60 * 1000);
     await user.save();
 
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
     const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
     const template = resetPasswordTemplate(user.name, resetUrl);
 
@@ -824,10 +913,10 @@ export const forgotPassword = async (req: Request, res: Response) => {
         html: template.html,
       });
     } catch (error) {
-      console.error('Email could not be sent', error);
+      console.error("Email could not be sent", error);
     }
 
-    res.json({ message: 'If the email exists, a reset link was sent.' });
+    res.json({ message: "If the email exists, a reset link was sent." });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -840,7 +929,10 @@ export const resetPassword = async (req: Request, res: Response) => {
   try {
     const { email, token, newPassword } = req.body;
 
-    const resetPasswordToken = crypto.createHash('sha256').update(token).digest('hex');
+    const resetPasswordToken = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
 
     const user = await User.findOne({
       email,
@@ -849,7 +941,7 @@ export const resetPassword = async (req: Request, res: Response) => {
     });
 
     if (!user) {
-      res.status(400).json({ message: 'Invalid or expired reset token' });
+      res.status(400).json({ message: "Invalid or expired reset token" });
       return;
     }
 
@@ -859,7 +951,7 @@ export const resetPassword = async (req: Request, res: Response) => {
     user.mustChangePassword = false;
     await user.save();
 
-    res.json({ message: 'Password reset successful' });
+    res.json({ message: "Password reset successful" });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -874,13 +966,13 @@ export const changePassword = async (req: any, res: Response) => {
     const user = await User.findById(req.user._id);
 
     if (!user || !user.password) {
-      res.status(404).json({ message: 'User not found' });
+      res.status(404).json({ message: "User not found" });
       return;
     }
 
     const isMatch = await user.matchPassword(currentPassword);
     if (!isMatch) {
-      res.status(401).json({ message: 'Current password is incorrect' });
+      res.status(401).json({ message: "Current password is incorrect" });
       return;
     }
 
@@ -888,7 +980,7 @@ export const changePassword = async (req: any, res: Response) => {
     user.mustChangePassword = false;
     await user.save();
 
-    res.json({ message: 'Password updated successfully' });
+    res.json({ message: "Password updated successfully" });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -902,7 +994,9 @@ export const getMyUnitStudents = async (req: any, res: Response) => {
     const teacherId = req.user._id;
 
     // 1. Find all units belonging to this teacher
-    const units = await Unit.find({ teacherId }).select('_id title subjectId').lean();
+    const units = await Unit.find({ teacherId })
+      .select("_id title subjectId")
+      .lean();
     const unitIds = units.map((u: any) => u._id);
 
     if (unitIds.length === 0) {
@@ -912,17 +1006,26 @@ export const getMyUnitStudents = async (req: any, res: Response) => {
 
     // 2. Find enrollments for those units
     const enrollments = await UnitEnrollment.find({ unitId: { $in: unitIds } })
-      .populate('studentId', '_id name email phone profileImage status createdAt')
-      .populate('unitId', '_id title subjectId')
+      .populate(
+        "studentId",
+        "_id name email phone profileImage status createdAt",
+      )
+      .populate("unitId", "_id title subjectId")
       .lean();
 
     // 3. Collect unique student ids
-    const studentIds = [...new Set(
-      enrollments.map((e: any) => String((e.studentId as any)?._id)).filter(Boolean)
-    )];
+    const studentIds = [
+      ...new Set(
+        enrollments
+          .map((e: any) => String((e.studentId as any)?._id))
+          .filter(Boolean),
+      ),
+    ];
 
     // 4. Fetch last payment for each student
-    const payments = await (await import('../models/Payment')).default
+    const payments = await (
+      await import("../models/Payment")
+    ).default
       .find({ studentId: { $in: studentIds } })
       .sort({ createdAt: -1 })
       .lean();

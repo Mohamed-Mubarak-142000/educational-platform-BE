@@ -1,164 +1,42 @@
-import { Request, Response } from 'express';
-import Course from '../models/Course';
-import Section from '../models/Section';
-import Lesson from '../models/Lesson';
-import LessonPart from '../models/LessonPart';
-import Progress from '../models/Progress';
-import Comment from '../models/Comment';
-import { canAccessLesson } from '../utils/subscriptionAccess';
+﻿import { Request, Response } from "express";
+import Lesson from "../models/Lesson";
+import LessonPart from "../models/LessonPart";
+import Progress from "../models/Progress";
+import Comment from "../models/Comment";
+import { canAccessLesson } from "../utils/subscriptionAccess";
 
-const resolveCourseForLesson = async (lesson: any) => {
-  if (lesson.courseId) {
-    return await Course.findById(lesson.courseId);
-  }
-
-  if (lesson.sectionId) {
-    const section = await Section.findById(lesson.sectionId);
-    if (section) {
-      return await Course.findById(section.courseId);
-    }
-  }
-
-  return null;
-};
-
-const assertCourseOwnership = (req: any, res: Response, course: any) => {
-  if (req.user?.role === 'Admin') return true;
-  if (course && String(course.teacherId) === String(req.user._id)) return true;
-  res.status(403).json({ message: 'Not authorized to modify this content' });
+const assertUnitLessonOwnership = (
+  req: any,
+  res: Response,
+  lesson: any,
+): boolean => {
+  if (req.user?.role === "Admin") return true;
+  const lessonTeacherId = lesson.teacherId?.toString();
+  if (lessonTeacherId && lessonTeacherId === String(req.user._id)) return true;
+  res.status(403).json({ message: "Not authorized to modify this content" });
   return false;
 };
 
-export const createSection = async (req: Request, res: Response) => {
-  try {
-    const { courseId, title, order } = req.body;
-    const course = await Course.findById(courseId);
-    if (!course) {
-      res.status(404).json({ message: 'Course not found' });
-      return;
-    }
-    if (!assertCourseOwnership(req as any, res, course)) return;
-    const section = await Section.create({ courseId, title, order });
-    res.status(201).json(section);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-export const getSections = async (req: Request, res: Response) => {
-  try {
-    const sections = await Section.find({ courseId: req.params.courseId }).sort('order');
-    res.json(sections);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-export const createLesson = async (req: Request, res: Response) => {
-  try {
-    const {
-      courseId,
-      sectionId,
-      title,
-      description,
-      videoUrl,
-      pdfUrl,
-      imageUrl,
-      modelUrl,
-      modelExplanation,
-      audioUrl,
-      order,
-      duration,
-    } = req.body;
-
-    let resolvedCourseId = courseId as string | undefined;
-
-    if (sectionId) {
-      const section = await Section.findById(sectionId);
-      if (!section) {
-        res.status(404).json({ message: 'Section not found' });
-        return;
-      }
-      if (!resolvedCourseId) {
-        resolvedCourseId = String(section.courseId);
-      } else if (String(section.courseId) !== String(resolvedCourseId)) {
-        res.status(400).json({ message: 'Section does not belong to the provided course' });
-        return;
-      }
-    }
-
-    if (!resolvedCourseId) {
-      res.status(400).json({ message: 'courseId is required for lesson creation' });
-      return;
-    }
-
-    const course = await Course.findById(resolvedCourseId);
-    if (!course) {
-      res.status(404).json({ message: 'Course not found' });
-      return;
-    }
-    if (!assertCourseOwnership(req as any, res, course)) return;
-
-    const lesson = await Lesson.create({
-      courseId: resolvedCourseId,
-      teacherId: course.teacherId,
-      sectionId,
-      title,
-      description,
-      videoUrl,
-      pdfUrl,
-      imageUrl,
-      modelUrl,
-      modelExplanation,
-      audioUrl,
-      order,
-      duration,
-    });
-    res.status(201).json(lesson);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-export const getLessonsByCourse = async (req: Request, res: Response) => {
-  try {
-    const lessons = await Lesson.find({ courseId: req.params.courseId }).sort('order');
-    res.json(lessons);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
 // GET /lessons/:id
-// Dual-purpose: if :id is a Section → return [{lessons}], if :id is a Lesson → return {lesson}
 export const getLessons = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-
-    // Check if this is a section ID
-    const section = await Section.findById(id as string).catch(() => null);
-    if (section) {
-      const lessons = await Lesson.find({ sectionId: id as string }).sort('order');
-      res.json(lessons);
+    const lesson = await Lesson.findById(req.params.id).catch(() => null);
+    if (!lesson) {
+      res.status(404).json({ message: "Lesson not found" });
       return;
     }
-
-    // Otherwise treat as a single lesson ID
-    const lesson = await Lesson.findById(id as string).catch(() => null);
-    if (lesson) {
-      const reqUser = (req as any).user;
-      if (reqUser?.role === 'Student') {
-        const access = await canAccessLesson({ studentId: String(reqUser._id), lessonId: String(lesson._id) });
-        if (!access.allowed) {
-          res.status(403).json({ message: 'Lesson locked' });
-          return;
-        }
+    const reqUser = (req as any).user;
+    if (reqUser?.role === "Student") {
+      const access = await canAccessLesson({
+        studentId: String(reqUser._id),
+        lessonId: String(lesson._id),
+      });
+      if (!access.allowed) {
+        res.status(403).json({ message: "Lesson locked" });
+        return;
       }
-      res.json(lesson);
-      return;
     }
-
-    res.status(404).json({ message: 'Not found' });
+    res.json(lesson);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -168,21 +46,27 @@ export const updateLesson = async (req: Request, res: Response) => {
   try {
     const lesson = await Lesson.findById(req.params.id);
     if (!lesson) {
-      res.status(404).json({ message: 'Lesson not found' });
+      res.status(404).json({ message: "Lesson not found" });
       return;
     }
-    const course = await resolveCourseForLesson(lesson);
-    if (course) {
-      if (!assertCourseOwnership(req as any, res, course)) return;
-    } else if ((req as any).user?.role !== 'Admin') {
-      // Unit-based lesson: verify the calling teacher owns it
-      const lessonTeacherId = lesson.teacherId?.toString();
-      if (!lessonTeacherId || lessonTeacherId !== String((req as any).user?._id)) {
-        res.status(403).json({ message: 'Not authorized to modify this content' });
-        return;
-      }
-    }
-    const fields = ['title', 'description', 'videoUrl', 'pdfUrl', 'imageUrl', 'modelUrl', 'modelExplanation', 'audioUrl', 'order', 'duration'] as const;
+    if (!assertUnitLessonOwnership(req as any, res, lesson)) return;
+    const fields = [
+      "title",
+      "titleAr",
+      "description",
+      "descriptionAr",
+      "videoUrl",
+      "pdfUrl",
+      "imageUrl",
+      "modelUrl",
+      "modelExplanation",
+      "modelExplanationAr",
+      "audioUrl",
+      "order",
+      "duration",
+      "isPublished",
+      "isFree",
+    ] as const;
     fields.forEach((f) => {
       if (req.body[f] !== undefined) (lesson as any)[f] = req.body[f];
     });
@@ -197,23 +81,13 @@ export const deleteLesson = async (req: Request, res: Response) => {
   try {
     const lesson = await Lesson.findById(req.params.id);
     if (!lesson) {
-      res.status(404).json({ message: 'Lesson not found' });
+      res.status(404).json({ message: "Lesson not found" });
       return;
     }
-    const course = await resolveCourseForLesson(lesson);
-    if (course) {
-      if (!assertCourseOwnership(req as any, res, course)) return;
-    } else if ((req as any).user?.role !== 'Admin') {
-      // Unit-based lesson: verify the calling teacher owns it
-      const lessonTeacherId = lesson.teacherId?.toString();
-      if (!lessonTeacherId || lessonTeacherId !== String((req as any).user?._id)) {
-        res.status(403).json({ message: 'Not authorized to modify this content' });
-        return;
-      }
-    }
+    if (!assertUnitLessonOwnership(req as any, res, lesson)) return;
     await LessonPart.deleteMany({ lessonId: lesson._id });
     await lesson.deleteOne();
-    res.json({ message: 'Lesson deleted successfully' });
+    res.json({ message: "Lesson deleted successfully" });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -222,8 +96,10 @@ export const deleteLesson = async (req: Request, res: Response) => {
 export const updateProgress = async (req: any, res: Response) => {
   try {
     const { lessonId, completed, watchedPercentage } = req.body;
-    let progress = await Progress.findOne({ studentId: req.user._id, lessonId });
-    
+    let progress = await Progress.findOne({
+      studentId: req.user._id,
+      lessonId,
+    });
     if (progress) {
       progress.completed = completed;
       progress.watchedPercentage = watchedPercentage;
@@ -242,11 +118,10 @@ export const updateProgress = async (req: any, res: Response) => {
   }
 };
 
-// GET /lessons/:lessonId/comments
 export const getCommentsByLesson = async (req: Request, res: Response) => {
   try {
     const comments = await Comment.find({ lessonId: req.params.lessonId })
-      .populate('userId', 'name role')
+      .populate("userId", "name role")
       .sort({ createdAt: 1 });
     res.json(comments);
   } catch (error: any) {
@@ -254,7 +129,6 @@ export const getCommentsByLesson = async (req: Request, res: Response) => {
   }
 };
 
-// POST /lessons/:lessonId/comments
 export const addLessonComment = async (req: any, res: Response) => {
   try {
     const { lessonId } = req.params;
@@ -265,43 +139,33 @@ export const addLessonComment = async (req: any, res: Response) => {
       text,
       likes: [],
     });
-    const populated = await comment.populate('userId', 'name role');
+    const populated = await comment.populate("userId", "name role");
     res.status(201).json(populated);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// GET /lessons/:lessonId/parts
 export const getPartsByLesson = async (req: Request, res: Response) => {
   try {
-    const parts = await LessonPart.find({ lessonId: req.params.lessonId }).sort({ order: 1 });
+    const parts = await LessonPart.find({ lessonId: req.params.lessonId }).sort(
+      { order: 1 },
+    );
     res.json(parts);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// POST /lessons/:lessonId/parts
 export const createLessonPart = async (req: Request, res: Response) => {
   try {
     const lessonId = req.params.lessonId as string;
     const lesson = await Lesson.findById(lessonId);
     if (!lesson) {
-      res.status(404).json({ message: 'Lesson not found' });
+      res.status(404).json({ message: "Lesson not found" });
       return;
     }
-    const course = await resolveCourseForLesson(lesson);
-    if (course) {
-      if (!assertCourseOwnership(req as any, res, course)) return;
-    } else if ((req as any).user?.role !== 'Admin') {
-      // Unit-based lesson: verify the calling teacher owns it
-      const lessonTeacherId = lesson.teacherId?.toString();
-      if (!lessonTeacherId || lessonTeacherId !== String((req as any).user?._id)) {
-        res.status(403).json({ message: 'Not authorized to modify this content' });
-        return;
-      }
-    }
+    if (!assertUnitLessonOwnership(req as any, res, lesson)) return;
     const { title, content, media, quiz, order } = req.body;
     const count = await LessonPart.countDocuments({ lessonId });
     const part = await LessonPart.create({
@@ -318,33 +182,18 @@ export const createLessonPart = async (req: Request, res: Response) => {
   }
 };
 
-// DELETE /lessons/parts/:id
 export const deleteLessonPart = async (req: Request, res: Response) => {
   try {
     const part = await LessonPart.findById(req.params.id);
     if (!part) {
-      res.status(404).json({ message: 'Lesson part not found' });
+      res.status(404).json({ message: "Lesson part not found" });
       return;
     }
     const lesson = await Lesson.findById(part.lessonId);
-    if (lesson) {
-      const course = await resolveCourseForLesson(lesson);
-      if (course) {
-        if (!assertCourseOwnership(req as any, res, course)) return;
-      } else if ((req as any).user?.role !== 'Admin') {
-        // Unit-based lesson: verify the calling teacher owns it
-        const lessonTeacherId = lesson.teacherId?.toString();
-        if (!lessonTeacherId || lessonTeacherId !== String((req as any).user?._id)) {
-          res.status(403).json({ message: 'Not authorized to modify this content' });
-          return;
-        }
-      }
-    }
+    if (lesson && !assertUnitLessonOwnership(req as any, res, lesson)) return;
     await part.deleteOne();
-    res.json({ message: 'Lesson part deleted successfully' });
+    res.json({ message: "Lesson part deleted successfully" });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
 };
-
-
