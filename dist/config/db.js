@@ -11,7 +11,7 @@ global.mongoose = globalCache;
 const buildMongoUri = (uri) => {
     try {
         const url = new URL(uri);
-        url.pathname = '/EducationalPlatformBiology';
+        url.pathname = '/educational-platform';
         return url.toString();
     }
     catch {

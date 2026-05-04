@@ -35,12 +35,24 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
 const LessonSchema = new mongoose_1.Schema({
-    sectionId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Section', required: true },
+    unitId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Unit" },
+    teacherId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User" },
     title: { type: String, required: true },
+    titleAr: { type: String, default: "" },
+    description: { type: String, default: "" },
+    descriptionAr: { type: String, default: "" },
     videoUrl: { type: String },
     pdfUrl: { type: String },
+    imageUrl: { type: String },
+    modelUrl: { type: String },
+    modelExplanation: { type: String },
+    modelExplanationAr: { type: String },
+    audioUrl: { type: String },
     order: { type: Number, required: true, default: 0 },
     duration: { type: Number },
+    isPublished: { type: Boolean, default: false },
+    isFree: { type: Boolean, default: false },
 }, { timestamps: true });
-const Lesson = mongoose_1.default.model('Lesson', LessonSchema);
+LessonSchema.index({ unitId: 1, order: 1 });
+const Lesson = mongoose_1.default.model("Lesson", LessonSchema);
 exports.default = Lesson;

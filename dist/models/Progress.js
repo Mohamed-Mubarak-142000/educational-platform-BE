@@ -38,7 +38,11 @@ const ProgressSchema = new mongoose_1.Schema({
     studentId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
     lessonId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Lesson', required: true },
     completed: { type: Boolean, required: true, default: false },
-    watchedPercentage: { type: Number, required: true, default: 0 },
+    watchedPercentage: { type: Number, required: true, default: 0, min: 0, max: 100 },
+    completedPartIds: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'LessonPart' }],
+    lastAccessedAt: { type: Date, default: Date.now },
 }, { timestamps: true });
+ProgressSchema.index({ studentId: 1, lessonId: 1 }, { unique: true });
+ProgressSchema.index({ studentId: 1 });
 const Progress = mongoose_1.default.model('Progress', ProgressSchema);
 exports.default = Progress;
