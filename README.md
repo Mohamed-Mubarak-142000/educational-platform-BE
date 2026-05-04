@@ -25,19 +25,22 @@ Node.js/Express REST API for the Educational Platform with real-time features us
 ## 🔧 Installation
 
 1. **Clone the repository**:
+
    ```bash
    git clone https://github.com/Mohamed-Mubarak-142000/educational-platform-BE.git
    cd educational-platform-BE
    ```
 
 2. **Install dependencies**:
+
    ```bash
    npm install
    ```
 
 3. **Setup environment variables**:
-   
+
    Copy `.env.example` to `.env` and fill in your values:
+
    ```bash
    cp .env.example .env
    ```
@@ -51,6 +54,7 @@ Node.js/Express REST API for the Educational Platform with real-time features us
    - `FRONTEND_URL` - Frontend URL for CORS
 
 4. **Start development server**:
+
    ```bash
    npm run dev
    ```
@@ -77,13 +81,16 @@ src/
 ## 📚 API Documentation
 
 ### Base URL
+
 ```
 Development: http://localhost:5001/api
 Production: https://your-domain.com/api
 ```
 
 ### Authentication
+
 All protected routes require JWT token in header:
+
 ```
 Authorization: Bearer <token>
 ```
@@ -91,6 +98,7 @@ Authorization: Bearer <token>
 ### Main Endpoints
 
 #### Users
+
 - `POST /api/users/register` - Register new user
 - `POST /api/users/login` - Login user
 - `GET /api/users/profile` - Get current user profile
@@ -99,6 +107,7 @@ Authorization: Bearer <token>
 - `POST /api/users/reset-password/:token` - Reset password
 
 #### Lessons
+
 - `GET /api/lessons` - Get all lessons (filtered by user)
 - `GET /api/lessons/:id` - Get lesson by ID
 - `POST /api/lessons` - Create lesson (Admin/Teacher)
@@ -106,21 +115,25 @@ Authorization: Bearer <token>
 - `DELETE /api/lessons/:id` - Delete lesson
 
 #### Quizzes
+
 - `GET /api/quizzes` - Get quizzes
 - `POST /api/quizzes` - Create quiz
 - `POST /api/quizzes/:id/submit` - Submit quiz answers
 
 #### Subscriptions
+
 - `GET /api/subscriptions` - Get user subscriptions
 - `POST /api/subscriptions` - Create subscription
 - `POST /api/subscriptions/:id/renew` - Renew subscription
 
 #### Payments (Paymob)
+
 - `POST /api/payments/paymob/initiate` - Start payment
 - `POST /api/payments/paymob/webhook` - Payment webhook
 - `GET /api/payments/paymob/history` - Payment history
 
 #### Live Classroom
+
 - `POST /api/live-classroom/create` - Create session
 - `GET /api/live-classroom/:id` - Get session details
 - `POST /api/live-classroom/:id/join` - Join session
@@ -164,6 +177,7 @@ npm start
 See [DEPLOYMENT_GUIDE.md](../DEPLOYMENT_GUIDE.md) for detailed deployment instructions.
 
 **Quick Deploy to Render:**
+
 1. Push code to GitHub
 2. Connect repo to Render
 3. Set environment variables
@@ -199,28 +213,29 @@ npm run build
 
 ## 📝 Environment Variables Reference
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `PORT` | Server port | `5001` |
-| `NODE_ENV` | Environment | `development` or `production` |
-| `MONGO_URI` | MongoDB connection | `mongodb+srv://...` |
-| `JWT_SECRET` | JWT signing key | `your_secret_key` |
-| `CLOUDINARY_CLOUD_NAME` | Cloudinary cloud name | `your_cloud` |
-| `CLOUDINARY_API_KEY` | Cloudinary API key | `123456789` |
-| `CLOUDINARY_API_SECRET` | Cloudinary secret | `secret123` |
-| `EMAIL_HOST` | SMTP host | `smtp.gmail.com` |
-| `EMAIL_PORT` | SMTP port | `587` |
-| `EMAIL_USER` | Email address | `your@email.com` |
-| `EMAIL_PASSWORD` | Email app password | `app_password` |
-| `PAYMOB_API_KEY` | Paymob API key | `api_key` |
-| `PAYMOB_INTEGRATION_ID` | Integration ID | `123456` |
-| `PAYMOB_IFRAME_ID` | Iframe ID | `123456` |
-| `PAYMOB_HMAC_SECRET` | HMAC secret | `secret` |
-| `FRONTEND_URL` | Frontend URL for CORS | `http://localhost:5173` |
+| Variable                | Description           | Example                       |
+| ----------------------- | --------------------- | ----------------------------- |
+| `PORT`                  | Server port           | `5001`                        |
+| `NODE_ENV`              | Environment           | `development` or `production` |
+| `MONGO_URI`             | MongoDB connection    | `mongodb+srv://...`           |
+| `JWT_SECRET`            | JWT signing key       | `your_secret_key`             |
+| `CLOUDINARY_CLOUD_NAME` | Cloudinary cloud name | `your_cloud`                  |
+| `CLOUDINARY_API_KEY`    | Cloudinary API key    | `123456789`                   |
+| `CLOUDINARY_API_SECRET` | Cloudinary secret     | `secret123`                   |
+| `EMAIL_HOST`            | SMTP host             | `smtp.gmail.com`              |
+| `EMAIL_PORT`            | SMTP port             | `587`                         |
+| `EMAIL_USER`            | Email address         | `your@email.com`              |
+| `EMAIL_PASSWORD`        | Email app password    | `app_password`                |
+| `PAYMOB_API_KEY`        | Paymob API key        | `api_key`                     |
+| `PAYMOB_INTEGRATION_ID` | Integration ID        | `123456`                      |
+| `PAYMOB_IFRAME_ID`      | Iframe ID             | `123456`                      |
+| `PAYMOB_HMAC_SECRET`    | HMAC secret           | `secret`                      |
+| `FRONTEND_URL`          | Frontend URL for CORS | `http://localhost:5173`       |
 
 ## 📞 Support
 
 For issues or questions:
+
 - Open a GitHub issue
 - Contact: eleviodev@gmail.com
 
