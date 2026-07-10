@@ -83,7 +83,7 @@ const DEFAULT_CONFIG: Omit<IPlatformConfig, keyof Document> = {
         titleEn: 'What Our Students Say',
         descriptionAr: 'آراء حقيقية من طلاب استفادوا من المنصة',
         descriptionEn: 'Real opinions from students who benefited from the platform',
-        order: 4,
+        order: 6,
         isVisible: true,
         testimonials: [
           { textAr: 'المنصة غيّرت طريقة دراستي تمامًا، أصبحت أفهم المواد بشكل أعمق وأحصل على نتائج أفضل.', textEn: 'The platform completely changed the way I study. I now understand subjects more deeply and achieve better results.', author: 'أحمد محمد', roleAr: 'طالب - الصف الأول الثانوي', roleEn: 'Student - Grade 10' },
@@ -101,7 +101,7 @@ const DEFAULT_CONFIG: Omit<IPlatformConfig, keyof Document> = {
         titleEn: 'Join Our Teaching Team',
         descriptionAr: 'هل أنت معلم متميز؟ انضم إلينا وشارك في بناء جيل المستقبل',
         descriptionEn: 'Are you an outstanding teacher? Join us and help build the next generation',
-        order: 5,
+        order: 4,
         isVisible: true,
       },
       {
@@ -111,7 +111,7 @@ const DEFAULT_CONFIG: Omit<IPlatformConfig, keyof Document> = {
         titleEn: 'Frequently Asked Questions',
         descriptionAr: 'إجابات على أكثر الأسئلة شيوعاً حول المنصة',
         descriptionEn: 'Answers to the most common questions about the platform',
-        order: 6,
+        order: 5,
         isVisible: true,
         faqItems: [
           { questionAr: 'كيف أسجل في المنصة؟', questionEn: 'How do I register on the platform?', answerAr: 'يمكنك التسجيل بالضغط على زر "إنشاء حساب" وإدخال بياناتك الأساسية.', answerEn: 'You can register by clicking the "Create Account" button and entering your basic information.' },

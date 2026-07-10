@@ -1,11 +1,11 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import http from "http";
 import app from "./app";
 import connectDB from "./config/db";
-import dotenv from "dotenv";
 import { startAllCronJobs } from "./jobs/subscriptionCron";
 import { initializeSocketServer } from "./services/socketService";
-
-dotenv.config();
 
 // Connect to database
 connectDB();
