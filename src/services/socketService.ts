@@ -1,7 +1,10 @@
 import { Server as HTTPServer } from "http";
 import { Server, Socket } from "socket.io";
+import jwt from "jsonwebtoken";
 import LiveClassroomSession from "../models/LiveClassroomSession";
 import LiveSessionParticipant from "../models/LiveSessionParticipant";
+import User from "../models/User";
+import JWT_SECRET from "../utils/jwtSecret";
 
 interface SocketUser {
   userId: string;
@@ -46,7 +49,7 @@ interface MediaToggle {
 
 // Store active rooms and their participants
 const rooms = new Map<string, Set<string>>(); // roomId -> Set of socketIds
-const socketToUser = new Map<string, SocketUser>(); // socketId -> user info
+const socketToUser = new Map<string, SocketUser>(); // socketId -> verified user info
 const socketToRoom = new Map<string, string>(); // socketId -> roomId
 
 /**
@@ -63,14 +66,55 @@ export const initializeSocketServer = (httpServer: HTTPServer): Server => {
     pingInterval: 25000,
   });
 
+  // ──────────────────────────────────────────────────────────────
+  // HANDSHAKE AUTHENTICATION
+  // Every client must present the same JWT it uses for the REST API.
+  // Nothing about a participant's identity/role is ever trusted from the
+  // client after this point — it's resolved once here from the database
+  // and reused for every event on this connection.
+  // ──────────────────────────────────────────────────────────────
+  io.use(async (socket, next) => {
+    try {
+      const token =
+        socket.handshake.auth?.token ||
+        (socket.handshake.headers.authorization || "").replace(/^Bearer\s+/i, "");
+
+      if (!token) {
+        next(new Error("Authentication required"));
+        return;
+      }
+
+      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      const user = await User.findById(decoded.id).select("name role profileImage");
+
+      if (!user) {
+        next(new Error("Authentication required"));
+        return;
+      }
+
+      (socket as any).authUser = {
+        userId: user._id.toString(),
+        role: user.role === "Teacher" ? "teacher" : "student",
+        name: user.name,
+        profileImage: (user as any).profileImage,
+      } satisfies SocketUser;
+
+      next();
+    } catch (error) {
+      next(new Error("Authentication required"));
+    }
+  });
+
   io.on("connection", (socket: Socket) => {
-    console.log(`[Socket.IO] Client connected: ${socket.id}`);
+    const authUser: SocketUser = (socket as any).authUser;
+    console.log(`[Socket.IO] Client connected: ${socket.id} (${authUser.userId})`);
 
     // ──────────────────────────────────────────────────────────────
     // JOIN ROOM
     // ──────────────────────────────────────────────────────────────
     socket.on("join-room", async (data: JoinRoomData) => {
-      const { roomId, user } = data;
+      const { roomId } = data;
+      const user = authUser; // verified server-side identity, not client input
 
       try {
         // Verify session exists
@@ -227,7 +271,8 @@ export const initializeSocketServer = (httpServer: HTTPServer): Server => {
     // WHITEBOARD ACTIONS
     // ──────────────────────────────────────────────────────────────
     socket.on("whiteboard-draw", async (data: WhiteboardData) => {
-      const { roomId, action, data: drawData, userId } = data;
+      const { roomId, action, data: drawData } = data;
+      const userId = authUser.userId;
 
       try {
         // Broadcast to all others in room
@@ -262,7 +307,9 @@ export const initializeSocketServer = (httpServer: HTTPServer): Server => {
     // CHAT MESSAGES
     // ──────────────────────────────────────────────────────────────
     socket.on("chat-message", async (data: ChatMessage) => {
-      const { roomId, message, userId, userName, timestamp } = data;
+      const { roomId, message, timestamp } = data;
+      const userId = authUser.userId;
+      const userName = authUser.name;
 
       try {
         // Broadcast to all in room (including sender for confirmation)
@@ -298,7 +345,8 @@ export const initializeSocketServer = (httpServer: HTTPServer): Server => {
     // MEDIA CONTROLS
     // ──────────────────────────────────────────────────────────────
     socket.on("toggle-media", async (data: MediaToggle) => {
-      const { roomId, userId, type, enabled } = data;
+      const { roomId, type, enabled } = data;
+      const userId = authUser.userId;
 
       try {
         // Broadcast to others
@@ -334,8 +382,9 @@ export const initializeSocketServer = (httpServer: HTTPServer): Server => {
     // ──────────────────────────────────────────────────────────────
     socket.on(
       "end-session",
-      async (data: { roomId: string; userId: string }) => {
-        const { roomId, userId } = data;
+      async (data: { roomId: string }) => {
+        const { roomId } = data;
+        const userId = authUser.userId;
 
         try {
           const session = await LiveClassroomSession.findOne({ roomId });

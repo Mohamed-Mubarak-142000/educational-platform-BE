@@ -5,20 +5,16 @@ import { AuthRequest } from "../middlewares/authMiddleware";
 import Payment from "../models/Payment";
 import Subscription from "../models/Subscription";
 import TeacherAssignment from "../models/TeacherAssignment";
-import TeacherSchedule from "../models/TeacherSchedule";
-import Unit from "../models/Unit";
+import LiveLessonRequest from "../models/LiveLessonRequest";
 import { initiatePaymobCheckout } from "../utils/paymobClient";
 import { verifyPaymobHmac } from "../utils/paymobHmac";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const PLAN_CONFIG: Record<string, { days: number; factor: number }> = {
-  Monthly: { days: 30, factor: 1.0 },
-  Quarterly: { days: 90, factor: 2.4 },
-  Yearly: { days: 365, factor: 8.0 },
-};
+import {
+  PLAN_CONFIG,
+  getSubjectOrUnitBasePriceEGP,
+  computeAmountCents,
+  type SubscriptionPlanName,
+} from "../utils/subscriptionPricing";
+import { activateSubjectOrUnitSubscription } from "../utils/subscriptionActivation";
 
 function buildIdempotencyKey(params: {
   studentId: string;
@@ -107,38 +103,22 @@ export const initiateCheckout = async (req: AuthRequest, res: Response) => {
 
     // Fetch price from DB (never trust client)
     let basePriceEGP: number;
-
-    if (subscriptionType === "unit") {
-      const unit = await Unit.findById(unitId).select(
-        "price subjectId gradeId",
-      );
-      if (!unit) {
-        res.status(404).json({ message: "Unit not found" });
-        return;
-      }
-      if (
-        String(unit.subjectId) !== String(subjectId) ||
-        String(unit.gradeId) !== String(gradeId)
-      ) {
-        res
-          .status(400)
-          .json({ message: "Unit does not belong to this subject/grade" });
-        return;
-      }
-      basePriceEGP = Number(unit.price) || 50; // fallback 50 EGP
-    } else {
-      // Subject price = sum of all unit prices in this assignment
-      const units = await Unit.find({
+    try {
+      basePriceEGP = await getSubjectOrUnitBasePriceEGP({
+        subscriptionType,
+        unitId,
+        subjectId,
+        gradeId,
         assignmentId: assignment._id,
-        isPublished: true,
-      }).select("price");
-      const total = units.reduce((sum, u) => sum + (Number(u.price) || 0), 0);
-      basePriceEGP = total > 0 ? total : 300; // fallback 300 EGP
+      });
+    } catch (priceError: any) {
+      res.status(priceError.message === "Unit not found" ? 404 : 400).json({
+        message: priceError.message,
+      });
+      return;
     }
 
-    const { days, factor } = PLAN_CONFIG[plan];
-    const amountCents = Math.round(basePriceEGP * factor * 100);
-    const planDays = days;
+    const { amountCents, planDays } = computeAmountCents(basePriceEGP, plan);
 
     // Check for existing active subscription
     const existingSub = await Subscription.findOne({
@@ -257,6 +237,207 @@ export const initiateCheckout = async (req: AuthRequest, res: Response) => {
 };
 
 // ---------------------------------------------------------------------------
+// @desc  Price quote for a subject/unit plan — lets the manual-payment flow
+//        show "how much to transfer" before the student has actually paid
+//        anything (Paymob learns the same number via create-intention).
+// @route GET /api/payments/quote
+// @access Student
+// ---------------------------------------------------------------------------
+export const getSubscriptionQuote = async (req: AuthRequest, res: Response) => {
+  try {
+    if (req.user?.role !== "Student") {
+      res.status(403).json({ message: "Only students can request a quote" });
+      return;
+    }
+
+    const { teacherId, subjectId, gradeId, unitId, subscriptionType, plan } =
+      req.query as {
+        teacherId?: string;
+        subjectId?: string;
+        gradeId?: string;
+        unitId?: string;
+        subscriptionType?: "subject" | "unit";
+        plan?: SubscriptionPlanName;
+      };
+
+    if (!teacherId || !subjectId || !gradeId || !subscriptionType || !plan) {
+      res.status(400).json({
+        message:
+          "Missing required fields: teacherId, subjectId, gradeId, subscriptionType, plan",
+      });
+      return;
+    }
+    if (!PLAN_CONFIG[plan]) {
+      res.status(400).json({ message: "Invalid plan" });
+      return;
+    }
+    if (subscriptionType === "unit" && !unitId) {
+      res.status(400).json({ message: "unitId is required for unit subscriptions" });
+      return;
+    }
+
+    const assignment = await TeacherAssignment.findOne({
+      teacherId,
+      subjectId,
+      gradeId,
+    });
+    if (!assignment) {
+      res.status(404).json({ message: "Teacher is not assigned to this subject/grade" });
+      return;
+    }
+
+    let basePriceEGP: number;
+    try {
+      basePriceEGP = await getSubjectOrUnitBasePriceEGP({
+        subscriptionType,
+        unitId,
+        subjectId,
+        gradeId,
+        assignmentId: assignment._id,
+      });
+    } catch (priceError: any) {
+      res.status(priceError.message === "Unit not found" ? 404 : 400).json({
+        message: priceError.message,
+      });
+      return;
+    }
+
+    const { amountCents, planDays } = computeAmountCents(basePriceEGP, plan);
+    res.json({ amountEGP: amountCents / 100, planDays });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// @desc  Student initiates a Paymob checkout for a single live-lesson request
+// @route POST /api/payments/live-lesson/create-intention
+// @access Student
+// ---------------------------------------------------------------------------
+export const initiateLiveLessonCheckout = async (
+  req: AuthRequest,
+  res: Response,
+) => {
+  try {
+    if (req.user?.role !== "Student") {
+      res.status(403).json({ message: "Only students can initiate payments" });
+      return;
+    }
+
+    const { requestId } = req.body as { requestId: string };
+    if (!requestId) {
+      res.status(400).json({ message: "requestId is required" });
+      return;
+    }
+
+    const request = await LiveLessonRequest.findById(requestId);
+    if (!request) {
+      res.status(404).json({ message: "Lesson request not found" });
+      return;
+    }
+
+    if (String(request.studentId) !== String(req.user._id)) {
+      res.status(403).json({ message: "This request does not belong to you" });
+      return;
+    }
+
+    if (request.status !== "pending") {
+      res
+        .status(400)
+        .json({ message: "This request is no longer awaiting payment" });
+      return;
+    }
+
+    if (request.paymentStatus === "paid") {
+      res.status(409).json({ message: "This request has already been paid" });
+      return;
+    }
+
+    // Price is never re-derived from the client — it was already computed
+    // server-side (duration × teacher rate × urgency) when the request was
+    // created and stored on the request itself.
+    const amountCents = Math.round(request.priceEGP * 100);
+
+    const idempotencyKey = crypto
+      .createHash("sha256")
+      .update(`live-lesson|${requestId}|${Math.floor(Date.now() / 300_000)}`)
+      .digest("hex");
+
+    const existingPayment = await Payment.findOne({ idempotencyKey });
+    if (existingPayment?.status === "pending") {
+      res.json({
+        paymentId: existingPayment._id,
+        paymobOrderId: existingPayment.paymobOrderId,
+        retryRequired: true,
+        message: "A pending payment already exists. Please complete it.",
+      });
+      return;
+    }
+
+    const billingData: Record<string, string> = {
+      apartment: "NA",
+      email: (req.user as any).email ?? "student@platform.com",
+      floor: "NA",
+      first_name: (req.user as any).name?.split(" ")[0] ?? "Student",
+      street: "NA",
+      building: "NA",
+      phone_number: (req.user as any).phone ?? "+20000000000",
+      shipping_method: "NA",
+      postal_code: "NA",
+      city: "Cairo",
+      country: "EG",
+      last_name:
+        (req.user as any).name?.split(" ").slice(1).join(" ") || "User",
+      state: "NA",
+    };
+
+    const payment = await Payment.create({
+      studentId: req.user._id,
+      teacherId: request.teacherId,
+      subjectId: request.subjectId,
+      gradeId: request.gradeId,
+      subscriptionType: "liveLesson",
+      liveLessonRequestId: request._id,
+      amountCents,
+      currency: "EGP",
+      status: "pending",
+      idempotencyKey,
+      isTest: process.env.NODE_ENV !== "production",
+    });
+
+    let paymobOrderId: string;
+    let iframeUrl: string;
+
+    try {
+      const result = await initiatePaymobCheckout(
+        amountCents,
+        "EGP",
+        idempotencyKey,
+        billingData,
+      );
+      paymobOrderId = result.paymobOrderId;
+      iframeUrl = result.iframeUrl;
+    } catch (paymobError: any) {
+      await Payment.findByIdAndUpdate(payment._id, { status: "failed" });
+      res
+        .status(502)
+        .json({ message: "Payment gateway error. Please try again." });
+      return;
+    }
+
+    await Payment.findByIdAndUpdate(payment._id, { paymobOrderId });
+
+    res.status(201).json({
+      paymentId: payment._id,
+      iframeUrl,
+      amountEGP: amountCents / 100,
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
 // @desc  Paymob webhook — transaction processed callback
 // @route POST /api/payments/webhook
 // @access Public (Paymob server only) — HMAC verified
@@ -348,104 +529,33 @@ export const handleWebhook = async (req: any, res: Response) => {
           { session },
         );
 
-        // Activate subscription on successful payment
-        if (newPaymentStatus === "success") {
-          const now = new Date();
-          const expiresAt = new Date(
-            now.getTime() + payment.planDays * 24 * 60 * 60 * 1000,
-          );
-
-          const filter = {
-            studentId: payment.studentId,
-            teacherId: payment.teacherId,
-            subjectId: payment.subjectId,
-            gradeId: payment.gradeId,
-            unitId:
-              payment.subscriptionType === "unit" ? payment.unitId : undefined,
-            type: payment.subscriptionType,
-          };
-
-          const existingSub =
-            await Subscription.findOne(filter).session(session);
-
-          let subscriptionId: mongoose.Types.ObjectId;
-
-          if (existingSub) {
-            // Extend existing subscription
-            const newExpiry =
-              existingSub.expiresAt > now
-                ? new Date(
-                    existingSub.expiresAt.getTime() +
-                      payment.planDays * 24 * 60 * 60 * 1000,
-                  )
-                : expiresAt;
-
-            await Subscription.findByIdAndUpdate(
-              existingSub._id,
+        // A live-lesson payment settles a single LiveLessonRequest, not a
+        // recurring Subscription — this is what finally lets acceptRequest's
+        // paymentStatus === "paid" gate actually pass.
+        if (payment.subscriptionType === "liveLesson") {
+          if (payment.liveLessonRequestId) {
+            const requestPaymentStatus =
+              newPaymentStatus === "success"
+                ? "paid"
+                : newPaymentStatus === "refunded"
+                  ? "refunded"
+                  : "failed";
+            await LiveLessonRequest.findByIdAndUpdate(
+              payment.liveLessonRequestId,
               {
-                status: "active",
-                expiresAt: newExpiry,
-                paymentId: payment._id,
-                plan: payment.plan,
-                planDays: payment.planDays,
+                paymentStatus: requestPaymentStatus,
+                paymentId: String(payment._id),
               },
               { session },
             );
-            subscriptionId = existingSub._id as mongoose.Types.ObjectId;
-          } else {
-            const [newSub] = await Subscription.create(
-              [
-                {
-                  studentId: payment.studentId,
-                  teacherId: payment.teacherId,
-                  subjectId: payment.subjectId,
-                  gradeId: payment.gradeId,
-                  unitId:
-                    payment.subscriptionType === "unit"
-                      ? payment.unitId
-                      : undefined,
-                  type: payment.subscriptionType,
-                  status: "active",
-                  paymentId: payment._id,
-                  plan: payment.plan,
-                  planDays: payment.planDays,
-                  startsAt: now,
-                  expiresAt,
-                  autoRenew: false,
-                },
-              ],
-              { session },
-            );
-            subscriptionId = newSub._id as mongoose.Types.ObjectId;
-
-            // AUTO-ENROLL: Add student to teacher's schedules for this subject
-            const schedules = await TeacherSchedule.find({
-              teacherId: payment.teacherId,
-              subjectId: payment.subjectId,
-              isActive: true,
-            });
-
-            // Enroll student in all matching schedules
-            for (const schedule of schedules) {
-              if (!schedule.enrolledStudents.includes(payment.studentId)) {
-                // Check capacity
-                if (schedule.enrolledStudents.length < schedule.maxStudents) {
-                  schedule.enrolledStudents.push(payment.studentId);
-                  await schedule.save({ session });
-                  console.log(
-                    `[auto-enroll] Added student ${payment.studentId} to schedule ${schedule._id}`,
-                  );
-                }
-              }
-            }
           }
+          return;
+        }
 
-          // Link subscription back to payment
-          await Payment.findByIdAndUpdate(
-            payment._id,
-            { subscriptionId },
-            { session },
-          );
+        // Activate subscription on successful payment (subject/unit only —
+        // liveLesson payments already returned above).
+        if (newPaymentStatus === "success") {
+          await activateSubjectOrUnitSubscription(session, payment);
         }
       });
     } finally {

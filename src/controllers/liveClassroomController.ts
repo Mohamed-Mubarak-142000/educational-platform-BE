@@ -5,6 +5,7 @@ import LiveSessionParticipant from "../models/LiveSessionParticipant";
 import LiveLessonRequest from "../models/LiveLessonRequest";
 import User from "../models/User";
 import Subscription from "../models/Subscription";
+import Payment from "../models/Payment";
 
 /**
  * Create a new live classroom session
@@ -23,6 +24,15 @@ export const createLiveSession = async (req: any, res: Response) => {
       price,
       paymentId,
     } = req.body;
+
+    // The caller must be one of the two participants they're creating a
+    // session for — otherwise anyone could spin up a session (and its
+    // room) for two other users.
+    const requesterId = String(req.user._id);
+    if (requesterId !== String(teacherId) && requesterId !== String(studentId)) {
+      res.status(403).json({ message: "You can only create a session you are a participant in" });
+      return;
+    }
 
     // Verify teacher and student exist
     const teacher = await User.findById(teacherId);
@@ -47,7 +57,20 @@ export const createLiveSession = async (req: any, res: Response) => {
         status: "active",
       });
 
-      if (!hasSubscription && !paymentId) {
+      // A paymentId alone is not proof of payment — it must reference an
+      // actual successful payment belonging to this student.
+      let hasValidPayment = false;
+      if (!hasSubscription && paymentId) {
+        const payment = await Payment.findOne({
+          _id: paymentId,
+          studentId,
+          teacherId,
+          status: "success",
+        });
+        hasValidPayment = !!payment;
+      }
+
+      if (!hasSubscription && !hasValidPayment) {
         res.status(403).json({ message: "Active subscription required" });
         return;
       }

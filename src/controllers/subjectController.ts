@@ -5,7 +5,6 @@ import GradeSubject from "../models/GradeSubject";
 import Unit from "../models/Unit";
 import Lesson from "../models/Lesson";
 import Subscription from "../models/Subscription";
-import SubscriptionRequest from "../models/SubscriptionRequest";
 import TeacherAssignment from "../models/TeacherAssignment";
 import Grade from "../models/Grade";
 import { AuthRequest } from "../middlewares/authMiddleware";
@@ -336,8 +335,7 @@ export const getSubjectTeacherContent = async (
 
     let subjectAccess = false;
     const unitAccessIds = new Set<string>();
-    let subscriptionStatus: "active" | "Pending" | "None" = "None";
-    const pendingUnitIds: string[] = [];
+    let subscriptionStatus: "active" | "None" = "None";
 
     if (req.user?.role === "Student") {
       const subs = await Subscription.find({
@@ -354,26 +352,7 @@ export const getSubjectTeacherContent = async (
         .filter((s: any) => s.type === "unit" && s.unitId)
         .forEach((s: any) => unitAccessIds.add(String(s.unitId)));
 
-      if (subjectAccess) {
-        subscriptionStatus = "active";
-      } else {
-        const pending = await SubscriptionRequest.find({
-          studentId: req.user._id,
-          teacherId: normalizedTeacherId,
-          subjectId: normalizedSubjectId,
-          gradeId: normalizedGradeId,
-          status: "Pending",
-        }).lean();
-
-        const hasPendingSubject = pending.some(
-          (p: any) => p.type === "subject",
-        );
-        if (hasPendingSubject) subscriptionStatus = "Pending";
-
-        pending
-          .filter((p: any) => p.type === "unit" && p.unitId)
-          .forEach((p: any) => pendingUnitIds.push(String(p.unitId)));
-      }
+      subscriptionStatus = subjectAccess ? "active" : "None";
     }
 
     const lessonByUnit = new Map<string, any[]>();
@@ -441,7 +420,6 @@ export const getSubjectTeacherContent = async (
           ? { subject: subjectAccess, unitIds: Array.from(unitAccessIds) }
           : undefined,
       subscriptionStatus,
-      pendingUnitIds,
     });
   } catch (error: any) {
     res.status(500).json({ message: error.message });

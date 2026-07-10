@@ -646,12 +646,20 @@ export const getTeacherById = async (req: Request, res: Response) => {
     const assignmentGrades = Array.from(gradeMap.values());
     const assignmentStages = Array.from(stageMap.values());
     const assignmentSubjects = Array.from(subjectMap.values());
-    const subjects = await Subject.find({ teacherId: teacher._id }).sort({
-      createdAt: 1,
-    });
+
+    // Units are scoped to this teacher via TeacherAssignment — Subject has
+    // no teacherId field, so querying Subject directly always returned
+    // nothing here and left student counts at zero.
+    const assignmentIds = assignments.map((a: any) => a._id);
     const subjectDetails = await Promise.all(
-      subjects.map(async (subject) => {
-        const units = await Unit.find({ subjectId: subject._id }).select("_id");
+      assignmentSubjects.map(async (subject: any) => {
+        const subjectAssignmentIds = assignments
+          .filter(
+            (a: any) =>
+              String((a.subjectId as any)?._id ?? a.subjectId) === String(subject._id),
+          )
+          .map((a: any) => a._id);
+        const units = await Unit.find({ assignmentId: { $in: subjectAssignmentIds } }).select("_id");
         const unitIds = units.map((unit) => unit._id);
         const studentIds =
           unitIds.length > 0
@@ -660,16 +668,16 @@ export const getTeacherById = async (req: Request, res: Response) => {
               })
             : [];
         return {
-          ...subject.toObject(),
+          ...subject,
           studentCount: studentIds.length,
         };
       }),
     );
 
     const allUnitIds =
-      subjectDetails.length > 0
+      assignmentIds.length > 0
         ? await Unit.find({
-            subjectId: { $in: subjectDetails.map((s) => s._id) },
+            assignmentId: { $in: assignmentIds },
           }).distinct("_id")
         : [];
     const totalStudentCount =
@@ -993,10 +1001,15 @@ export const getMyUnitStudents = async (req: any, res: Response) => {
   try {
     const teacherId = req.user._id;
 
-    // 1. Find all units belonging to this teacher
-    const units = await Unit.find({ teacherId })
-      .select("_id title subjectId")
-      .lean();
+    // 1. Find all units belonging to this teacher — Unit has no teacherId
+    // field, only assignmentId, so this must go through TeacherAssignment.
+    const assignmentIds = await TeacherAssignment.find({ teacherId }).distinct("_id");
+    const units =
+      assignmentIds.length > 0
+        ? await Unit.find({ assignmentId: { $in: assignmentIds } })
+            .select("_id title subjectId")
+            .lean()
+        : [];
     const unitIds = units.map((u: any) => u._id);
 
     if (unitIds.length === 0) {
@@ -1055,8 +1068,9 @@ export const getMyUnitStudents = async (req: any, res: Response) => {
           },
           payment: pay
             ? {
-                amount: pay.amount,
-                method: pay.method,
+                amount: pay.amountCents / 100,
+                currency: pay.currency,
+                plan: pay.plan,
                 status: pay.status,
                 submittedAt: pay.createdAt,
               }

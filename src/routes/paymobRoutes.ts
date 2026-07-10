@@ -2,6 +2,8 @@ import express from "express";
 import { protect, admin } from "../middlewares/authMiddleware";
 import {
   initiateCheckout,
+  initiateLiveLessonCheckout,
+  getSubscriptionQuote,
   handleWebhook,
   handleCallback,
   getMyPaymentHistory,
@@ -14,6 +16,12 @@ const router = express.Router();
 
 // Student: initiate Paymob checkout
 router.post("/create-intention", protect, initiateCheckout);
+
+// Student: initiate Paymob checkout for a single live-lesson request
+router.post("/live-lesson/create-intention", protect, initiateLiveLessonCheckout);
+
+// Student: price quote for a subject/unit plan (used by the manual-transfer flow)
+router.get("/quote", protect, getSubscriptionQuote);
 
 // Paymob webhook — must receive raw JSON body, no auth
 router.post("/webhook", express.json(), handleWebhook);

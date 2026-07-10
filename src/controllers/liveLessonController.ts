@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import LiveLessonRequest from "../models/LiveLessonRequest";
 import LiveSession from "../models/LiveSession";
 import User from "../models/User";
+import Payment from "../models/Payment";
 import mongoose from "mongoose";
 
 // ────────────── STUDENT ENDPOINTS ──────────────
@@ -144,9 +145,20 @@ export const cancelRequest = async (req: any, res: Response) => {
     }
 
     request.status = "cancelled";
+    // Bookkeeping only, matching the existing admin refund flow — this
+    // platform doesn't call Paymob's refund API anywhere yet, it just marks
+    // the records so an admin knows a manual refund is owed.
+    if (request.paymentStatus === "paid") {
+      request.paymentStatus = "refunded";
+      if (request.paymentId) {
+        await Payment.findByIdAndUpdate(request.paymentId, {
+          status: "refunded",
+          refundedAt: new Date(),
+          refundReason: "Live lesson request cancelled by student",
+        });
+      }
+    }
     await request.save();
-
-    // TODO: Handle refund if payment was made
 
     res.json({ message: "Request cancelled successfully" });
   } catch (error: any) {
@@ -324,9 +336,19 @@ export const declineRequest = async (req: any, res: Response) => {
 
     request.status = "declined";
     request.declineReason = reason;
+    // Bookkeeping only — see the matching note in cancelRequest.
+    if (request.paymentStatus === "paid") {
+      request.paymentStatus = "refunded";
+      if (request.paymentId) {
+        await Payment.findByIdAndUpdate(request.paymentId, {
+          status: "refunded",
+          refundedAt: new Date(),
+          refundReason: "Live lesson request declined by teacher",
+        });
+      }
+    }
     await request.save();
 
-    // TODO: Initiate refund if payment was made
     // TODO: Notify student
 
     res.json({ message: "Request declined" });

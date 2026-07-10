@@ -9,9 +9,30 @@ import UnitEnrollment from '../models/UnitEnrollment';
 import QuizGrade from '../models/QuizGrade';
 import Comment from '../models/Comment';
 import { AuthRequest } from '../middlewares/authMiddleware';
-import { attachCreator } from '../middlewares/rbacMiddleware';
+import { attachCreator, checkTeacherSubjectAccess } from '../middlewares/rbacMiddleware';
 import TeacherAssignment from '../models/TeacherAssignment';
 import { getStudentSubscriptionScope } from '../utils/subscriptionAccess';
+
+// Resolve the Unit a quiz is attached to, whether directly (unit) or via a
+// lesson / lesson-part, so teacher ownership can be checked against it.
+const resolveUnitForQuiz = async (quiz: { attachedTo: string; attachedToId: any }) => {
+  if (quiz.attachedTo === 'unit') {
+    return Unit.findById(quiz.attachedToId).select('subjectId gradeId').lean();
+  }
+  if (quiz.attachedTo === 'lesson') {
+    const lesson = await Lesson.findById(quiz.attachedToId).select('unitId').lean();
+    if (!lesson?.unitId) return null;
+    return Unit.findById(lesson.unitId).select('subjectId gradeId').lean();
+  }
+  if (quiz.attachedTo === 'part') {
+    const part = await LessonPart.findById(quiz.attachedToId).select('lessonId').lean();
+    if (!part?.lessonId) return null;
+    const lesson = await Lesson.findById(part.lessonId).select('unitId').lean();
+    if (!lesson?.unitId) return null;
+    return Unit.findById(lesson.unitId).select('subjectId gradeId').lean();
+  }
+  return null;
+};
 
 // ── Unit CRUD ─────────────────────────────────────────────────────
 
@@ -261,10 +282,21 @@ export const deleteUnitQuiz = async (req: Request, res: Response) => {
 
 // ── MCQ Questions ─────────────────────────────────────────────────
 
-export const getQuestionsByQuiz = async (req: Request, res: Response) => {
+export const getQuestionsByQuiz = async (req: AuthRequest, res: Response) => {
   try {
     const questions = await MCQQuestion.find({ quizId: req.params.quizId as string });
-    res.json(questions);
+    // Students taking the quiz must never receive the correct answer in the
+    // payload — only reveal it to whoever is allowed to author/preview it.
+    const isPrivileged = req.user?.role === 'Teacher' || req.user?.role === 'Admin';
+    if (isPrivileged) {
+      res.json(questions);
+      return;
+    }
+    const sanitized = questions.map((q) => {
+      const { correctAnswer, ...rest } = q.toObject();
+      return rest;
+    });
+    res.json(sanitized);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -315,35 +347,85 @@ export const deleteMCQQuestion = async (req: Request, res: Response) => {
 
 // ── Quiz Grades ───────────────────────────────────────────────────
 
-export const submitQuizGrade = async (req: any, res: Response) => {
+// The client submits which option it picked per question; the score is
+// always computed here from the stored correctAnswer, never trusted from
+// the request body — otherwise any student could report a fabricated score.
+export const submitQuizGrade = async (req: AuthRequest, res: Response) => {
   try {
-    const { quizId, score, correctCount, totalQuestions } = req.body;
+    const { quizId, answers } = req.body as { quizId: string; answers?: Record<string, number> };
+    if (!quizId) {
+      res.status(400).json({ message: 'quizId is required' });
+      return;
+    }
+
+    const questions = await MCQQuestion.find({ quizId });
+    const totalQuestions = questions.length;
+    let correctCount = 0;
+    const correctAnswers: Record<string, number> = {};
+
+    for (const q of questions) {
+      const qid = String(q._id);
+      correctAnswers[qid] = q.correctAnswer;
+      const submitted = answers?.[qid];
+      if (submitted !== undefined && Number(submitted) === q.correctAnswer) {
+        correctCount += 1;
+      }
+    }
+
+    const score = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
+
     const grade = await QuizGrade.create({
-      studentId: req.user._id,
+      studentId: req.user!._id,
       quizId,
       score,
       correctCount,
       totalQuestions,
       completedAt: new Date(),
     });
-    res.status(201).json(grade);
+
+    // Now that the attempt is recorded, it's safe to reveal the correct
+    // answers so the student can review what they got wrong.
+    res.status(201).json({ ...grade.toObject(), correctAnswers });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
 };
 
-export const getGradesByStudent = async (req: Request, res: Response) => {
+export const getGradesByStudent = async (req: AuthRequest, res: Response) => {
   try {
-    const grades = await QuizGrade.find({ studentId: req.params.studentId as string }).sort({ completedAt: -1 });
+    const { studentId } = req.params as { studentId: string };
+    if (req.user?.role !== 'Admin' && req.user?._id.toString() !== studentId) {
+      res.status(403).json({ message: 'Access denied.' });
+      return;
+    }
+    const grades = await QuizGrade.find({ studentId }).sort({ completedAt: -1 });
     res.json(grades);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
 };
 
-export const getGradesByQuiz = async (req: Request, res: Response) => {
+export const getGradesByQuiz = async (req: AuthRequest, res: Response) => {
   try {
-    const grades = await QuizGrade.find({ quizId: req.params.quizId as string })
+    const { quizId } = req.params as { quizId: string };
+
+    if (req.user?.role === 'Teacher') {
+      const quiz = await UnitQuiz.findById(quizId).select('attachedTo attachedToId').lean();
+      const unit = quiz ? await resolveUnitForQuiz(quiz) : null;
+      const hasAccess =
+        !!unit &&
+        (await checkTeacherSubjectAccess(
+          req.user._id.toString(),
+          String(unit.subjectId),
+          String(unit.gradeId)
+        ));
+      if (!hasAccess) {
+        res.status(403).json({ message: "Access denied. You are not assigned to this quiz's subject/grade." });
+        return;
+      }
+    }
+
+    const grades = await QuizGrade.find({ quizId })
       .populate('studentId', 'name email')
       .sort({ completedAt: -1 });
     res.json(grades);
@@ -386,9 +468,14 @@ export const setUnitAvailability = async (req: Request, res: Response) => {
 
 // ── Unit Enrollment ───────────────────────────────────────────────
 
-export const getEnrolledUnitIds = async (req: Request, res: Response) => {
+export const getEnrolledUnitIds = async (req: AuthRequest, res: Response) => {
   try {
-    const enrollments = await UnitEnrollment.find({ studentId: req.params.studentId as string });
+    const { studentId } = req.params as { studentId: string };
+    if (req.user?.role !== 'Admin' && req.user?._id.toString() !== studentId) {
+      res.status(403).json({ message: 'Access denied.' });
+      return;
+    }
+    const enrollments = await UnitEnrollment.find({ studentId });
     res.json(enrollments.map((e) => e.unitId));
   } catch (error: any) {
     res.status(500).json({ message: error.message });

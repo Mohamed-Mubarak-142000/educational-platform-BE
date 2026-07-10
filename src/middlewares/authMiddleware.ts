@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
 import User, { IUser } from '../models/User';
+import JWT_SECRET from '../utils/jwtSecret';
 
 export interface AuthRequest extends Request {
   user?: IUser;
@@ -12,7 +13,7 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     try {
       token = req.headers.authorization.split(' ')[1];
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as any;
+      const decoded = jwt.verify(token, JWT_SECRET) as any;
 
       const user = await User.findById(decoded.id).select('-password');
       if (user) {

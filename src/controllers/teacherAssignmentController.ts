@@ -8,7 +8,7 @@ import Grade from "../models/Grade";
 import Lesson from "../models/Lesson";
 import UnitQuiz from "../models/UnitQuiz";
 import UnitEnrollment from "../models/UnitEnrollment";
-import Subscription from "../models/Subscription";
+import { getStudentSubscriptionScope } from "../utils/subscriptionAccess";
 
 // ---------------------------------------------------------------------------
 // @desc  Get all assignments (filter by teacherId / subjectId / gradeId)
@@ -302,21 +302,20 @@ export const getAssignmentContent = async (req: Request, res: Response) => {
     }
 
     let subjectAccess = false;
-    const unitAccessIds = new Set<string>();
+    let unitAccessIds = new Set<string>();
 
     if (reqUser?.role === "Student") {
-      const subs = await Subscription.find({
-        studentId: reqUser._id,
+      // Shared with subjectController — this used to re-implement the same
+      // lock/unlock check with a status value ("Approved") that doesn't
+      // exist on Subscription, so it could never unlock content.
+      const scope = await getStudentSubscriptionScope({
+        studentId: String(reqUser._id),
         teacherId: normalizedTeacherId,
         subjectId: normalizedSubjectId,
         gradeId: normalizedGradeId,
-        status: "Approved",
-      }).lean();
-
-      subjectAccess = subs.some((s: any) => s.type === "subject");
-      subs
-        .filter((s: any) => s.type === "unit" && s.unitId)
-        .forEach((s: any) => unitAccessIds.add(String(s.unitId)));
+      });
+      subjectAccess = scope.subjectAccess;
+      unitAccessIds = scope.unitAccessIds;
     }
 
     const lessonByUnit = new Map<string, any[]>();
