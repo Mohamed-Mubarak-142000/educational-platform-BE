@@ -145,7 +145,10 @@ export const getPublicAssignments = async (req: Request, res: Response) => {
     if (req.query.gradeId) filter.gradeId = req.query.gradeId as string;
 
     const assignments = await TeacherAssignment.find(filter)
-      .populate("teacherId", "name email bio profileImage")
+      .populate(
+        "teacherId",
+        "name email bio profileImage isAvailableForInstantLessons instantLessonPricePerHour"
+      )
       .populate("subjectId", "name nameAr icon color")
       .populate("gradeId", "name nameAr");
 
@@ -371,6 +374,91 @@ export const getAssignmentContent = async (req: Request, res: Response) => {
           ? { subject: subjectAccess, unitIds: Array.from(unitAccessIds) }
           : undefined,
     });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// @desc  Public preview of a teacher's content for a subject+grade — units and
+//        lessons, with the same "first lesson per unit is a free preview"
+//        rule used for logged-in students. Always unauthenticated: nothing
+//        beyond the free preview lessons is ever unlocked here, regardless of
+//        login state — full access still requires the private student flow.
+// @route GET /api/teacher-assignments/public-content?subjectId=X&gradeId=Y&teacherId=Z
+// @access Public
+// ---------------------------------------------------------------------------
+export const getPublicAssignmentContent = async (req: Request, res: Response) => {
+  try {
+    const { subjectId, gradeId, teacherId } = req.query as {
+      subjectId?: string;
+      gradeId?: string;
+      teacherId?: string;
+    };
+
+    if (!subjectId || !gradeId || !teacherId) {
+      res.status(400).json({ message: "subjectId, gradeId and teacherId are required" });
+      return;
+    }
+
+    const assignment = await TeacherAssignment.findOne({ subjectId, gradeId, teacherId })
+      .populate(
+        "teacherId",
+        "name bio profileImage isAvailableForInstantLessons instantLessonPricePerHour"
+      )
+      .populate("subjectId", "name nameAr icon color")
+      .populate("gradeId", "name nameAr stageId")
+      .lean();
+
+    if (!assignment) {
+      res.status(404).json({ message: "Assignment not found" });
+      return;
+    }
+
+    const units = await Unit.find({ assignmentId: assignment._id, isPublished: true })
+      .sort({ order: 1 })
+      .lean();
+    const unitIds = units.map((u) => u._id);
+
+    const lessons = await Lesson.find({ unitId: { $in: unitIds }, isPublished: true })
+      .sort({ order: 1, createdAt: 1 })
+      .lean();
+
+    const lessonByUnit = new Map<string, any[]>();
+    lessons.forEach((lesson: any) => {
+      const key = String(lesson.unitId);
+      if (!lessonByUnit.has(key)) lessonByUnit.set(key, []);
+      lessonByUnit.get(key)!.push(lesson);
+    });
+
+    const payloadUnits = units.map((unit: any) => {
+      const unitLessons = lessonByUnit.get(String(unit._id)) || [];
+      const firstLessonId = unitLessons[0]?._id ? String(unitLessons[0]._id) : null;
+      const normalizedLessons = unitLessons.map((lesson: any) => {
+        const isFree = firstLessonId ? String(lesson._id) === firstLessonId : false;
+        if (isFree) {
+          return { ...lesson, isFree: true, locked: false, isUnlocked: true };
+        }
+        return {
+          _id: lesson._id,
+          unitId: lesson.unitId,
+          title: lesson.title,
+          titleAr: lesson.titleAr,
+          description: lesson.description,
+          descriptionAr: lesson.descriptionAr,
+          order: lesson.order,
+          duration: lesson.duration,
+          isPublished: lesson.isPublished,
+          isFree: false,
+          locked: true,
+          isUnlocked: false,
+        };
+      });
+
+      return { ...unit, isUnlocked: false, lessons: normalizedLessons };
+    });
+
+    res.json({ assignment, units: payloadUnits });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

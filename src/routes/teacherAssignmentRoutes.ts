@@ -6,6 +6,7 @@ import {
   deleteAssignment,
   getMyAssignments,
   getPublicAssignments,
+  getPublicAssignmentContent,
   getTeachersBySubjectStage,
   getAssignmentContent,
   createUnitForAssignment,
@@ -19,6 +20,9 @@ const router = Router();
 
 // Public: get teachers for a subject+grade (no auth required — used from home page flow)
 router.get('/public', getPublicAssignments);
+
+// Public: preview a teacher's units/lessons for a subject+grade (first lesson per unit free, no auth required)
+router.get('/public-content', getPublicAssignmentContent);
 
 // Student: get teachers for a subject+stage
 router.get('/by-subject-stage', protect, getTeachersBySubjectStage);
