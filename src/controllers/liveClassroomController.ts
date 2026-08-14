@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "crypto";
 import LiveClassroomSession from "../models/LiveClassroomSession";
 import LiveSessionParticipant from "../models/LiveSessionParticipant";
 import LiveLessonRequest from "../models/LiveLessonRequest";
@@ -92,7 +92,7 @@ export const createLiveSession = async (req: any, res: Response) => {
     }
 
     // Generate unique room ID
-    const roomId = `room-${uuidv4()}`;
+    const roomId = `room-${randomUUID()}`;
 
     // Create session
     const session = await LiveClassroomSession.create({
