@@ -204,6 +204,37 @@ export const examScheduledTemplate = (
   return { subject, text, html };
 };
 
+export const teacherApplicationAdminNotificationTemplate = (params: {
+  name: string;
+  email: string;
+  phone?: string;
+  bio?: string;
+  stageNames: string[];
+  subjectNames: string[];
+  reviewLink: string;
+}): EmailTemplate => {
+  const { name, email, phone, bio, stageNames, subjectNames, reviewLink } = params;
+  const subject = `New teacher application: ${name} - Academix`;
+  const text = `A new teacher application was submitted.\n\nName: ${name}\nEmail: ${email}${phone ? `\nPhone: ${phone}` : ''}${stageNames.length ? `\nStages: ${stageNames.join(', ')}` : ''}${subjectNames.length ? `\nSubjects: ${subjectNames.join(', ')}` : ''}${bio ? `\nBio: ${bio}` : ''}\n\nReview it here: ${reviewLink}`;
+  const html = wrapHtml(
+    subject,
+    `<h2 style="margin:0 0 12px;">New teacher application 📋</h2>
+     <p style="margin:0 0 16px;">A teacher just applied to join the platform — take a look when you get a chance.</p>
+     <div style="background:#f8faff;border:1px solid #bfdbfe;border-radius:10px;padding:16px 20px;margin:16px 0;">
+       <table style="width:100%;border-collapse:collapse;">
+         <tr><td style="padding:4px 0;color:#64748b;font-size:13px;">Name</td><td style="padding:4px 0;color:#1e293b;font-weight:600;">${name}</td></tr>
+         <tr><td style="padding:4px 0;color:#64748b;font-size:13px;">Email</td><td style="padding:4px 0;color:#1e293b;">${email}</td></tr>
+         ${phone ? `<tr><td style="padding:4px 0;color:#64748b;font-size:13px;">Phone</td><td style="padding:4px 0;color:#1e293b;">${phone}</td></tr>` : ''}
+         ${stageNames.length ? `<tr><td style="padding:4px 0;color:#64748b;font-size:13px;">Stages</td><td style="padding:4px 0;color:#1e293b;">${stageNames.join(', ')}</td></tr>` : ''}
+         ${subjectNames.length ? `<tr><td style="padding:4px 0;color:#64748b;font-size:13px;">Subjects</td><td style="padding:4px 0;color:#1e293b;">${subjectNames.join(', ')}</td></tr>` : ''}
+       </table>
+       ${bio ? `<p style="margin:12px 0 0;color:#475569;font-size:13px;line-height:1.5;">${bio}</p>` : ''}
+     </div>
+     <p style="margin:0;"><a href="${reviewLink}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:8px;">Review application</a></p>`
+  );
+  return { subject, text, html };
+};
+
 export const teacherApplicationReceivedTemplate = (name: string): EmailTemplate => {
   const subject = 'We received your teacher application - Academix';
   const text = `Hello ${name},\n\nYour request has been submitted successfully and is under review. You will receive an update once it has been processed.\n\nThank you,\nThe Academix Team`;

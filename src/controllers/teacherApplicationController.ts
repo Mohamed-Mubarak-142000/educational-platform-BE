@@ -3,6 +3,8 @@ import mongoose from "mongoose";
 import TeacherApplication from "../models/TeacherApplication";
 import TeacherAssignment from "../models/TeacherAssignment";
 import Grade from "../models/Grade";
+import Stage from "../models/Stage";
+import Subject from "../models/Subject";
 import User from "../models/User";
 import sendEmail from "../utils/sendEmail";
 import {
@@ -10,6 +12,7 @@ import {
   teacherApplicationAcceptedTemplate,
   teacherApplicationRejectedTemplate,
   teacherEvaluationScheduledTemplate,
+  teacherApplicationAdminNotificationTemplate,
 } from "../utils/emailTemplates";
 
 export const getTeacherApplications = async (_req: Request, res: Response) => {
@@ -65,6 +68,40 @@ export const submitTeacherApplication = async (req: Request, res: Response) => {
       });
     } catch (error) {
       console.error("Teacher application email failed:", error);
+    }
+
+    // Let every admin know a new application is waiting on them.
+    try {
+      const [admins, stages, subjects] = await Promise.all([
+        User.find({ role: "Admin" }).select("email"),
+        application.stageIds?.length
+          ? Stage.find({ _id: { $in: application.stageIds } }).select("name")
+          : Promise.resolve([]),
+        application.subjectIds?.length
+          ? Subject.find({ _id: { $in: application.subjectIds } }).select("name")
+          : Promise.resolve([]),
+      ]);
+      const adminEmails = admins.map((a) => a.email).filter(Boolean);
+      if (adminEmails.length > 0) {
+        const frontendUrl = (process.env.FRONTEND_URL || "").split(",")[0]?.trim();
+        const notification = teacherApplicationAdminNotificationTemplate({
+          name,
+          email,
+          phone,
+          bio,
+          stageNames: stages.map((s: any) => s.name),
+          subjectNames: subjects.map((s: any) => s.name),
+          reviewLink: frontendUrl ? `${frontendUrl}/admin/teacher-requests` : "",
+        });
+        await sendEmail({
+          email: adminEmails.join(", "),
+          subject: notification.subject,
+          message: notification.text,
+          html: notification.html,
+        });
+      }
+    } catch (error) {
+      console.error("Teacher application admin notification failed:", error);
     }
 
     res.status(201).json(application);
