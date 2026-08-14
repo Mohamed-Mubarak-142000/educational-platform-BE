@@ -3,14 +3,16 @@ import crypto from "crypto";
 import User from "../models/User";
 import Subject from "../models/Subject";
 import Unit from "../models/Unit";
-import UnitEnrollment from "../models/UnitEnrollment";
+import Subscription from "../models/Subscription";
 import SubjectProgress from "../models/SubjectProgress";
 import TeacherSchedule from "../models/TeacherSchedule";
 import TeacherAssignment from "../models/TeacherAssignment";
 import Stage from "../models/Stage";
 import Grade from "../models/Grade";
+import { getActiveStudentIdsForTeacher } from "../utils/subscriptionAccess";
 import sendEmail from "../utils/sendEmail";
 import generateToken from "../utils/generateToken";
+import { generateOtp } from "../utils/otp";
 import {
   otpTemplate,
   resetPasswordTemplate,
@@ -40,7 +42,7 @@ export const registerUser = async (req: Request, res: Response) => {
       return;
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = generateOtp();
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
     const user = await User.create({
@@ -121,7 +123,7 @@ export const resendOTP = async (req: Request, res: Response) => {
       return;
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = generateOtp();
     user.otp = otp;
     user.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
     user.otpLastSent = new Date();
@@ -187,7 +189,7 @@ export const verifyOTP = async (req: Request, res: Response) => {
   }
 };
 
-// @desc    Auth user & get token
+// @desc    Auth user & get token (Admins get an extra OTP step — see verifyLoginOtp)
 // @route   POST /api/users/login
 // @access  Public
 export const loginUser = async (req: Request, res: Response) => {
@@ -201,6 +203,30 @@ export const loginUser = async (req: Request, res: Response) => {
         res.status(401).json({ message: "Please verify your email first" });
         return;
       }
+
+      if (user.role === "Admin") {
+        const otp = generateOtp();
+        user.otp = otp;
+        user.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+        user.otpLastSent = new Date();
+        await user.save();
+
+        const template = otpTemplate(user.name, otp);
+        try {
+          await sendEmail({
+            email: user.email,
+            subject: template.subject,
+            message: template.text,
+            html: template.html,
+          });
+        } catch (error) {
+          console.error("Email could not be sent", error);
+        }
+
+        res.json({ requiresOtp: true, userId: user._id });
+        return;
+      }
+
       res.json({
         _id: user._id,
         name: user.name,
@@ -212,6 +238,45 @@ export const loginUser = async (req: Request, res: Response) => {
     } else {
       res.status(401).json({ message: "Invalid email or password" });
     }
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Verify the OTP sent to an Admin at login and issue the JWT
+// @route   POST /api/users/login/verify-otp
+// @access  Public
+export const verifyLoginOtp = async (req: Request, res: Response) => {
+  try {
+    const { userId, otp } = req.body as { userId?: string; otp?: string };
+    if (!userId || !otp) {
+      res.status(400).json({ message: "userId and otp are required" });
+      return;
+    }
+
+    const user = await User.findById(userId);
+    if (!user || user.role !== "Admin") {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    if (user.otp !== otp || (user.otpExpires && user.otpExpires < new Date())) {
+      res.status(400).json({ message: "Invalid or expired code" });
+      return;
+    }
+
+    user.otp = undefined;
+    user.otpExpires = undefined;
+    await user.save();
+
+    res.json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      mustChangePassword: user.mustChangePassword,
+      token: generateToken(String(user._id)),
+    });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -262,22 +327,14 @@ export const getMySubscribedSubjects = async (req: any, res: Response) => {
   try {
     const studentId = req.user._id;
 
-    const enrollments = await UnitEnrollment.find({ studentId })
-      .select("unitId")
-      .lean();
-    if (enrollments.length === 0) {
-      res.json([]);
-      return;
-    }
-
-    const unitIds = enrollments.map((e) => e.unitId);
-    const units = await Unit.find({ _id: { $in: unitIds } })
-      .select("subjectId gradeId")
-      .lean();
-
-    const subjectIds = Array.from(
-      new Set(units.map((unit) => String(unit.subjectId)).filter(Boolean)),
-    );
+    // Active Subscriptions are the real record of what a student has paid
+    // for — not the disconnected UnitEnrollment collection, which nothing
+    // in the payment/approval flow ever writes to.
+    const subjectIds = await Subscription.distinct("subjectId", {
+      studentId,
+      status: "active",
+      expiresAt: { $gt: new Date() },
+    });
 
     if (subjectIds.length === 0) {
       res.json([]);
@@ -565,10 +622,105 @@ const applyUserUpdates = (user: any, updates: any) => {
 // @desc    Get teachers
 // @route   GET /api/users/teachers
 // @access  Private/Admin
-export const getTeachers = async (_req: Request, res: Response) => {
+export const getTeachers = async (req: Request, res: Response) => {
   try {
-    const teachers = await User.find({ role: "Teacher" }).select("-password");
-    res.json(teachers);
+    const {
+      search,
+      status,
+      subjectIds,
+      stageIds,
+      sortBy = "name",
+      sortOrder = "asc",
+    } = req.query as {
+      search?: string;
+      status?: string;
+      subjectIds?: string;
+      stageIds?: string;
+      sortBy?: string;
+      sortOrder?: string;
+    };
+
+    const filter: Record<string, unknown> = { role: "Teacher" };
+    if (status) filter.status = status;
+    if (search) {
+      const regex = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      filter.$or = [{ name: regex }, { email: regex }];
+    }
+
+    const teachers = await User.find(filter).select("-password").lean();
+    const teacherIds = teachers.map((teacher) => teacher._id);
+
+    const assignments = await TeacherAssignment.find({
+      teacherId: { $in: teacherIds },
+    })
+      .select("teacherId subjectId gradeId")
+      .populate("subjectId", "name nameAr icon color")
+      .populate({
+        path: "gradeId",
+        select: "name nameAr stageId",
+        populate: { path: "stageId", select: "name nameAr icon color" },
+      })
+      .lean();
+
+    const subjectsByTeacher = new Map<string, any[]>();
+    const stagesByTeacher = new Map<string, any[]>();
+    for (const assignment of assignments) {
+      const key = String(assignment.teacherId);
+
+      const subject = assignment.subjectId as any;
+      if (subject && subject._id) {
+        const subjectList = subjectsByTeacher.get(key) ?? [];
+        if (!subjectList.some((s) => String(s._id) === String(subject._id))) {
+          subjectList.push(subject);
+        }
+        subjectsByTeacher.set(key, subjectList);
+      }
+
+      const grade = assignment.gradeId as any;
+      const stage = grade?.stageId;
+      if (stage && stage._id) {
+        const stageList = stagesByTeacher.get(key) ?? [];
+        if (!stageList.some((s) => String(s._id) === String(stage._id))) {
+          stageList.push(stage);
+        }
+        stagesByTeacher.set(key, stageList);
+      }
+    }
+
+    const requestedSubjectIds = subjectIds
+      ? subjectIds.split(",").filter(Boolean)
+      : [];
+    const requestedStageIds = stageIds ? stageIds.split(",").filter(Boolean) : [];
+
+    let result = teachers.map((teacher) => ({
+      ...teacher,
+      assignmentSubjects: subjectsByTeacher.get(String(teacher._id)) ?? [],
+      assignmentStages: stagesByTeacher.get(String(teacher._id)) ?? [],
+    }));
+
+    if (requestedSubjectIds.length > 0) {
+      result = result.filter((teacher) =>
+        teacher.assignmentSubjects.some((s: any) =>
+          requestedSubjectIds.includes(String(s._id)),
+        ),
+      );
+    }
+    if (requestedStageIds.length > 0) {
+      result = result.filter((teacher) =>
+        teacher.assignmentStages.some((s: any) =>
+          requestedStageIds.includes(String(s._id)),
+        ),
+      );
+    }
+
+    const sortDir = sortOrder === "desc" ? -1 : 1;
+    result.sort((a: any, b: any) => {
+      const aVal = String(a[sortBy] ?? "").toLowerCase();
+      const bVal = String(b[sortBy] ?? "").toLowerCase();
+      return aVal < bVal ? -sortDir : aVal > bVal ? sortDir : 0;
+    });
+
+    res.json(result);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -579,29 +731,53 @@ export const getTeachers = async (_req: Request, res: Response) => {
 // @access  Private/Teacher
 export const getMyStudents = async (req: any, res: Response) => {
   try {
-    const assignments = await TeacherAssignment.find({
-      teacherId: req.user._id,
-    })
-      .select("_id")
-      .lean();
-    const assignmentIds = assignments.map((a: any) => a._id);
-    const enrollments = await UnitEnrollment.find({
-      assignmentId: { $in: assignmentIds },
-    })
-      .populate(
-        "studentId",
-        "_id name email phone profileImage stageId status createdAt",
-      )
-      .lean();
-    const uniqueStudentsMap = new Map<string, any>();
-    for (const enrollment of enrollments) {
-      const student = enrollment.studentId as any;
-      if (student && student._id) {
-        const key = String(student._id);
-        if (!uniqueStudentsMap.has(key)) uniqueStudentsMap.set(key, student);
+    const {
+      search,
+      status,
+      stageIds,
+      sortBy = "name",
+      sortOrder = "asc",
+    } = req.query as {
+      search?: string;
+      status?: string;
+      stageIds?: string;
+      sortBy?: string;
+      sortOrder?: string;
+    };
+
+    const studentIds = await getActiveStudentIdsForTeacher(
+      String(req.user._id),
+    );
+    let result = studentIds.length
+      ? await User.find({ _id: { $in: studentIds } })
+          .select("_id name email phone profileImage stageId status createdAt")
+          .lean()
+      : [];
+
+    if (status) result = result.filter((s: any) => s.status === status);
+
+    if (stageIds) {
+      const ids = stageIds.split(",").filter(Boolean);
+      if (ids.length > 0) {
+        result = result.filter((s: any) => s.stageId && ids.includes(String(s.stageId)));
       }
     }
-    res.json(Array.from(uniqueStudentsMap.values()));
+
+    if (search) {
+      const regex = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      result = result.filter(
+        (s: any) => regex.test(s.name ?? "") || regex.test(s.email ?? "") || regex.test(s.phone ?? ""),
+      );
+    }
+
+    const sortDir = sortOrder === "desc" ? -1 : 1;
+    result.sort((a: any, b: any) => {
+      const aVal = String(a[sortBy] ?? "").toLowerCase();
+      const bVal = String(b[sortBy] ?? "").toLowerCase();
+      return aVal < bVal ? -sortDir : aVal > bVal ? sortDir : 0;
+    });
+
+    res.json(result);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -647,26 +823,14 @@ export const getTeacherById = async (req: Request, res: Response) => {
     const assignmentStages = Array.from(stageMap.values());
     const assignmentSubjects = Array.from(subjectMap.values());
 
-    // Units are scoped to this teacher via TeacherAssignment — Subject has
-    // no teacherId field, so querying Subject directly always returned
-    // nothing here and left student counts at zero.
-    const assignmentIds = assignments.map((a: any) => a._id);
+    // Student counts come from active Subscriptions (the real source of
+    // access), not the disconnected UnitEnrollment collection.
     const subjectDetails = await Promise.all(
       assignmentSubjects.map(async (subject: any) => {
-        const subjectAssignmentIds = assignments
-          .filter(
-            (a: any) =>
-              String((a.subjectId as any)?._id ?? a.subjectId) === String(subject._id),
-          )
-          .map((a: any) => a._id);
-        const units = await Unit.find({ assignmentId: { $in: subjectAssignmentIds } }).select("_id");
-        const unitIds = units.map((unit) => unit._id);
-        const studentIds =
-          unitIds.length > 0
-            ? await UnitEnrollment.distinct("studentId", {
-                unitId: { $in: unitIds },
-              })
-            : [];
+        const studentIds = await getActiveStudentIdsForTeacher(
+          String(teacher._id),
+          String(subject._id),
+        );
         return {
           ...subject,
           studentCount: studentIds.length,
@@ -674,20 +838,9 @@ export const getTeacherById = async (req: Request, res: Response) => {
       }),
     );
 
-    const allUnitIds =
-      assignmentIds.length > 0
-        ? await Unit.find({
-            assignmentId: { $in: assignmentIds },
-          }).distinct("_id")
-        : [];
-    const totalStudentCount =
-      allUnitIds.length > 0
-        ? (
-            await UnitEnrollment.distinct("studentId", {
-              unitId: { $in: allUnitIds },
-            })
-          ).length
-        : 0;
+    const totalStudentCount = (
+      await getActiveStudentIdsForTeacher(String(teacher._id))
+    ).length;
 
     const schedules = await TeacherSchedule.find({ teacherId: teacher._id })
       .populate("subjectId", "name")
@@ -720,6 +873,109 @@ export const getTeacherById = async (req: Request, res: Response) => {
       schedules,
       cvUrl: teacherObj.cvUrl ?? null,
       // Enriched academic relations derived from TeacherAssignments
+      assignmentStages,
+      assignmentGrades,
+      assignmentSubjects,
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Get a teacher's public profile (name, bio, subjects taught,
+//          availability, scheduled live lessons) — no contact/account info
+// @route   GET /api/users/teachers/:id/public-profile
+// @access  Public
+export const getPublicTeacherProfile = async (req: Request, res: Response) => {
+  try {
+    const teacher = await User.findOne({
+      _id: req.params.id,
+      role: "Teacher",
+    }).select(
+      "name bio profileImage availableDays availableHours isAvailableForInstantLessons instantLessonPricePerHour createdAt",
+    );
+    if (!teacher) {
+      res.status(404).json({ message: "Teacher not found" });
+      return;
+    }
+
+    const assignments = await TeacherAssignment.find({ teacherId: teacher._id })
+      .populate("subjectId", "name nameAr icon color description")
+      .populate({
+        path: "gradeId",
+        select: "name nameAr order stageId",
+        populate: { path: "stageId", select: "name nameAr icon color" },
+      })
+      .lean();
+
+    const gradeMap = new Map<string, any>();
+    const stageMap = new Map<string, any>();
+    const subjectMap = new Map<string, any>();
+    for (const a of assignments) {
+      const grade = a.gradeId as any;
+      const subject = a.subjectId as any;
+      if (grade && grade._id) gradeMap.set(String(grade._id), grade);
+      if (grade?.stageId && grade.stageId._id)
+        stageMap.set(String(grade.stageId._id), grade.stageId);
+      if (subject && subject._id) subjectMap.set(String(subject._id), subject);
+    }
+    const assignmentGrades = Array.from(gradeMap.values());
+    const assignmentStages = Array.from(stageMap.values());
+    const assignmentSubjects = Array.from(subjectMap.values());
+
+    const subjectDetails = await Promise.all(
+      assignmentSubjects.map(async (subject: any) => {
+        const studentIds = await getActiveStudentIdsForTeacher(
+          String(teacher._id),
+          String(subject._id),
+        );
+        return {
+          ...subject,
+          studentCount: studentIds.length,
+        };
+      }),
+    );
+
+    const totalStudentCount = (
+      await getActiveStudentIdsForTeacher(String(teacher._id))
+    ).length;
+
+    const schedules = await TeacherSchedule.find({ teacherId: teacher._id, isActive: true })
+      .select("day startTime endTime subjectId")
+      .populate("subjectId", "name nameAr")
+      .sort({ day: 1, startTime: 1 });
+
+    const teacherObj = teacher.toObject({ flattenMaps: true });
+
+    const availableHoursRaw = teacherObj.availableHours as unknown as
+      | Record<string, { start?: string; end?: string }>
+      | undefined;
+    const resolvedAvailableHours: Record<
+      string,
+      { start?: string; end?: string }
+    > =
+      availableHoursRaw && Object.keys(availableHoursRaw).length > 0
+        ? availableHoursRaw
+        : {};
+    const resolvedAvailableDays: string[] = Array.isArray(
+      teacherObj.availableDays,
+    )
+      ? teacherObj.availableDays
+      : [];
+
+    res.json({
+      _id: teacherObj._id,
+      name: teacherObj.name,
+      bio: teacherObj.bio,
+      profileImage: teacherObj.profileImage,
+      isAvailableForInstantLessons: teacherObj.isAvailableForInstantLessons,
+      instantLessonPricePerHour: teacherObj.instantLessonPricePerHour,
+      createdAt: (teacherObj as any).createdAt,
+      availableDays: resolvedAvailableDays,
+      availableHours: resolvedAvailableHours,
+      subjects: subjectDetails,
+      totalStudentCount,
+      schedules,
       assignmentStages,
       assignmentGrades,
       assignmentSubjects,
@@ -783,9 +1039,37 @@ export const deleteTeacher = async (req: Request, res: Response) => {
 // @desc    Get students
 // @route   GET /api/users/students
 // @access  Private/Admin
-export const getStudents = async (_req: Request, res: Response) => {
+export const getStudents = async (req: Request, res: Response) => {
   try {
-    const students = await User.find({ role: "Student" }).select("-password");
+    const {
+      search,
+      status,
+      stageIds,
+      sortBy = "name",
+      sortOrder = "asc",
+    } = req.query as {
+      search?: string;
+      status?: string;
+      stageIds?: string;
+      sortBy?: string;
+      sortOrder?: string;
+    };
+
+    const filter: Record<string, unknown> = { role: "Student" };
+    if (status) filter.status = status;
+    if (stageIds) {
+      const ids = stageIds.split(",").filter(Boolean);
+      if (ids.length > 0) filter.stageId = { $in: ids };
+    }
+    if (search) {
+      const regex = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      filter.$or = [{ name: regex }, { email: regex }];
+    }
+
+    const sortDir = sortOrder === "desc" ? -1 : 1;
+    const students = await User.find(filter)
+      .select("-password")
+      .sort({ [sortBy]: sortDir });
     res.json(students);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -805,17 +1089,11 @@ export const getStudentById = async (req: Request, res: Response) => {
       res.status(404).json({ message: "Student not found" });
       return;
     }
-    const enrollments = await UnitEnrollment.find({
+    const subjectIds = await Subscription.distinct("subjectId", {
       studentId: student._id,
-    }).select("unitId");
-    const unitIds = enrollments.map((enrollment) => enrollment.unitId);
-    const units =
-      unitIds.length > 0
-        ? await Unit.find({ _id: { $in: unitIds } }).select("subjectId")
-        : [];
-    const subjectIds = Array.from(
-      new Set(units.map((unit) => String(unit.subjectId))),
-    );
+      status: "active",
+      expiresAt: { $gt: new Date() },
+    });
     const subscribedSubjects =
       subjectIds.length > 0
         ? await Subject.find({ _id: { $in: subjectIds } })
@@ -1001,41 +1279,64 @@ export const getMyUnitStudents = async (req: any, res: Response) => {
   try {
     const teacherId = req.user._id;
 
-    // 1. Find all units belonging to this teacher — Unit has no teacherId
-    // field, only assignmentId, so this must go through TeacherAssignment.
-    const assignmentIds = await TeacherAssignment.find({ teacherId }).distinct("_id");
-    const units =
-      assignmentIds.length > 0
-        ? await Unit.find({ assignmentId: { $in: assignmentIds } })
-            .select("_id title subjectId")
-            .lean()
-        : [];
-    const unitIds = units.map((u: any) => u._id);
+    // Active subscriptions to this teacher are the real source of "who is
+    // enrolled" — not the disconnected UnitEnrollment collection, which
+    // nothing in the payment/approval flow ever writes to.
+    const subscriptions = await Subscription.find({
+      teacherId,
+      status: "active",
+      expiresAt: { $gt: new Date() },
+    })
+      .populate("studentId", "_id name email phone profileImage status createdAt")
+      .populate("unitId", "_id title")
+      .lean();
 
-    if (unitIds.length === 0) {
+    if (subscriptions.length === 0) {
       res.json({ totalStudents: 0, students: [] });
       return;
     }
 
-    // 2. Find enrollments for those units
-    const enrollments = await UnitEnrollment.find({ unitId: { $in: unitIds } })
-      .populate(
-        "studentId",
-        "_id name email phone profileImage status createdAt",
-      )
-      .populate("unitId", "_id title subjectId")
-      .lean();
-
-    // 3. Collect unique student ids
     const studentIds = [
       ...new Set(
-        enrollments
-          .map((e: any) => String((e.studentId as any)?._id))
+        subscriptions
+          .map((s: any) => String((s.studentId as any)?._id))
           .filter(Boolean),
       ),
     ];
 
-    // 4. Fetch last payment for each student
+    // A subject-wide subscription grants every unit under that subject/grade
+    // for this teacher — resolve those units per subject so they can be
+    // listed just like a direct unit purchase.
+    const subjectSubs = (subscriptions as any[]).filter((s) => s.type === "subject");
+    const subjectUnitsMap = new Map<string, Array<{ unitId: any; title: string }>>();
+    if (subjectSubs.length > 0) {
+      const assignments = await TeacherAssignment.find({
+        $or: subjectSubs.map((s) => ({
+          teacherId: s.teacherId,
+          subjectId: s.subjectId,
+          gradeId: s.gradeId,
+        })),
+      })
+        .select("_id subjectId")
+        .lean();
+      const assignmentIds = assignments.map((a: any) => a._id);
+      const units = assignmentIds.length
+        ? await Unit.find({ assignmentId: { $in: assignmentIds } })
+            .select("_id title assignmentId")
+            .lean()
+        : [];
+      const assignmentToSubject = new Map(
+        assignments.map((a: any) => [String(a._id), String(a.subjectId)]),
+      );
+      for (const unit of units as any[]) {
+        const subjectId = assignmentToSubject.get(String(unit.assignmentId));
+        if (!subjectId) continue;
+        if (!subjectUnitsMap.has(subjectId)) subjectUnitsMap.set(subjectId, []);
+        subjectUnitsMap.get(subjectId)!.push({ unitId: unit._id, title: unit.title });
+      }
+    }
+
+    // Fetch last payment for each student
     const payments = await (
       await import("../models/Payment")
     ).default
@@ -1048,10 +1349,10 @@ export const getMyUnitStudents = async (req: any, res: Response) => {
       if (!payMap.has(key)) payMap.set(key, p); // first = newest
     }
 
-    // 5. Build result grouped by student, listing enrolled units
+    // Build result grouped by student, listing enrolled units
     const studentMap = new Map<string, any>();
-    for (const enrollment of enrollments as any[]) {
-      const student = enrollment.studentId;
+    for (const sub of subscriptions as any[]) {
+      const student = sub.studentId;
       if (!student?._id) continue;
       const key = String(student._id);
       if (!studentMap.has(key)) {
@@ -1070,19 +1371,20 @@ export const getMyUnitStudents = async (req: any, res: Response) => {
             ? {
                 amount: pay.amountCents / 100,
                 currency: pay.currency,
-                plan: pay.plan,
                 status: pay.status,
                 submittedAt: pay.createdAt,
               }
             : null,
-          enrolledUnits: [],
+          enrolledUnits: [] as Array<{ unitId: any; title: string }>,
         });
       }
-      const unitDoc = enrollment.unitId as any;
-      studentMap.get(key)!.enrolledUnits.push({
-        unitId: unitDoc?._id,
-        title: unitDoc?.title,
-      });
+      const entry = studentMap.get(key)!;
+      if (sub.type === "unit" && sub.unitId) {
+        const unitDoc = sub.unitId as any;
+        entry.enrolledUnits.push({ unitId: unitDoc._id, title: unitDoc.title });
+      } else if (sub.type === "subject") {
+        entry.enrolledUnits.push(...(subjectUnitsMap.get(String(sub.subjectId)) ?? []));
+      }
     }
 
     const students = Array.from(studentMap.values());

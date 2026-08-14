@@ -10,7 +10,7 @@ export const getMySubscriptions = async (req: any, res: Response) => {
   try {
     const filters: Record<string, unknown> = {
       studentId: req.user._id,
-      status: { $in: ["active", "expiring_soon"] },
+      status: "active",
     };
     if (req.query.subjectId) filters.subjectId = req.query.subjectId;
     if (req.query.teacherId) filters.teacherId = req.query.teacherId;

@@ -4,6 +4,7 @@ import {
 	verifyOTP,
 	resendOTP,
 	loginUser,
+	verifyLoginOtp,
 	logoutUser,
 	getUserProfile,
 	updateUserProfile,
@@ -11,6 +12,7 @@ import {
 	createStudent,
 	getTeachers,
 	getTeacherById,
+	getPublicTeacherProfile,
 	updateTeacher,
 	deleteTeacher,
 	getStudents,
@@ -26,19 +28,22 @@ import {
 } from '../controllers/userController';
 import { protect, admin, teacher } from '../middlewares/authMiddleware';
 import upload from '../middlewares/uploadMiddleware';
+import { authLimiter } from '../middlewares/rateLimitMiddleware';
 
 const router = express.Router();
 
-router.post('/register', registerUser);
-router.post('/verify', verifyOTP);
-router.post('/resend-otp', resendOTP);
-router.post('/login', loginUser);
+router.post('/register', authLimiter, registerUser);
+router.post('/verify', authLimiter, verifyOTP);
+router.post('/resend-otp', authLimiter, resendOTP);
+router.post('/login', authLimiter, loginUser);
+router.post('/login/verify-otp', authLimiter, verifyLoginOtp);
 router.post('/logout', logoutUser);
-router.post('/forgot-password', forgotPassword);
-router.post('/reset-password', resetPassword);
+router.post('/forgot-password', authLimiter, forgotPassword);
+router.post('/reset-password', authLimiter, resetPassword);
 router.post('/change-password', protect, changePassword);
 router.post('/teachers', protect, admin, createTeacher);
 router.get('/teachers', protect, admin, getTeachers);
+router.get('/teachers/:id/public-profile', getPublicTeacherProfile);
 router.get('/teachers/:id', protect, admin, getTeacherById);
 router.put('/teachers/:id', protect, admin, updateTeacher);
 router.delete('/teachers/:id', protect, admin, deleteTeacher);

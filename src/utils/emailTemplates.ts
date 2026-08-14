@@ -182,6 +182,28 @@ export const resetPasswordTemplate = (name: string, resetUrl: string): EmailTemp
   return { subject, text, html };
 };
 
+export const examScheduledTemplate = (
+  name: string,
+  examTitle: string,
+  scheduledStartFormatted: string,
+  examLink: string
+): EmailTemplate => {
+  const subject = `New exam scheduled: ${examTitle} - Academix`;
+  const text = `Hello ${name},\n\nYour teacher has scheduled a new exam: "${examTitle}".\n\nStarts at: ${scheduledStartFormatted}\nLink: ${examLink}\n\nThe exam will only open at the scheduled time. Please be ready a few minutes early.\n\nThe Academix Team`;
+  const html = wrapHtml(
+    subject,
+    `<h2 style="margin:0 0 12px;">New exam scheduled</h2>
+     <p style="margin:0 0 12px;">Hello ${name},</p>
+     <p style="margin:0 0 12px;">Your teacher has scheduled a new exam: <strong>${examTitle}</strong>.</p>
+     <div style="background:#f8faff;border:1px solid #bfdbfe;border-radius:10px;padding:16px 20px;margin:16px 0;">
+       <p style="margin:0;color:#1e293b;font-size:14px;"><strong>Starts at:</strong> ${scheduledStartFormatted}</p>
+     </div>
+     <p style="margin:0 0 16px;"><a href="${examLink}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:8px;">Open exam</a></p>
+     <p style="margin:0;font-size:13px;color:#64748b;">The exam will only open at the scheduled time — please be ready a few minutes early.</p>`
+  );
+  return { subject, text, html };
+};
+
 export const teacherApplicationReceivedTemplate = (name: string): EmailTemplate => {
   const subject = 'We received your teacher application - Academix';
   const text = `Hello ${name},\n\nYour request has been submitted successfully and is under review. You will receive an update once it has been processed.\n\nThank you,\nThe Academix Team`;

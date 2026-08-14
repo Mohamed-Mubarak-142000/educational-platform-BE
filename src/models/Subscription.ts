@@ -1,11 +1,13 @@
 import mongoose, { Document, Model, Schema } from "mongoose";
 
 export type SubscriptionType = "subject" | "unit";
-export type SubscriptionStatus =
-  | "active"
-  | "expiring_soon"
-  | "expired"
-  | "revoked";
+export type SubscriptionStatus = "active" | "revoked";
+
+// A subscription is a one-time purchase that grants lifetime access — there
+// is no plan/renewal concept. `expiresAt` is kept (always set to the sentinel
+// far-future date below) purely so existing access-control queries that
+// filter on `expiresAt: { $gt: now }` keep working unchanged.
+export const LIFETIME_EXPIRY = new Date("2099-01-01");
 
 export interface ISubscription extends Document {
   studentId: mongoose.Types.ObjectId;
@@ -16,15 +18,11 @@ export interface ISubscription extends Document {
   type: SubscriptionType;
   status: SubscriptionStatus;
   paymentId?: mongoose.Types.ObjectId;
-  plan?: string;
-  planDays?: number;
   expiresAt: Date;
   startsAt: Date;
-  autoRenew: boolean;
   revokedBy?: mongoose.Types.ObjectId;
   revokedAt?: Date;
   revokedReason?: string;
-  renewedFromId?: mongoose.Types.ObjectId;
 }
 
 const SubscriptionSchema = new Schema<ISubscription>(
@@ -37,23 +35,19 @@ const SubscriptionSchema = new Schema<ISubscription>(
     type: { type: String, enum: ["subject", "unit"], required: true },
     status: {
       type: String,
-      enum: ["active", "expiring_soon", "expired", "revoked"],
+      enum: ["active", "revoked"],
       default: "active",
     },
     paymentId: { type: Schema.Types.ObjectId, ref: "Payment" },
-    plan: { type: String },
-    planDays: { type: Number },
     expiresAt: {
       type: Date,
       required: true,
-      default: () => new Date("2099-01-01"),
+      default: () => LIFETIME_EXPIRY,
     },
     startsAt: { type: Date, required: true, default: Date.now },
-    autoRenew: { type: Boolean, default: false },
     revokedBy: { type: Schema.Types.ObjectId, ref: "User" },
     revokedAt: { type: Date },
     revokedReason: { type: String },
-    renewedFromId: { type: Schema.Types.ObjectId, ref: "Subscription" },
   },
   { timestamps: true },
 );

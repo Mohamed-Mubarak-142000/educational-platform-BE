@@ -1,5 +1,26 @@
 import { Request, Response } from 'express';
 import TeacherSchedule from '../models/TeacherSchedule';
+import Subscription from '../models/Subscription';
+
+const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+const validateScheduleTimes = (startTime: string, endTime: string): string | null => {
+  if (!TIME_RE.test(startTime) || !TIME_RE.test(endTime)) {
+    return 'startTime and endTime must be in HH:MM (24-hour) format';
+  }
+  if (startTime >= endTime) {
+    return 'endTime must be after startTime';
+  }
+  return null;
+};
+
+const validateMaxStudents = (maxStudents: unknown): string | null => {
+  if (maxStudents === undefined) return null;
+  if (!Number.isInteger(maxStudents) || (maxStudents as number) < 1) {
+    return 'maxStudents must be a positive integer';
+  }
+  return null;
+};
 
 export const getSchedules = async (_req: Request, res: Response) => {
   try {
@@ -64,6 +85,16 @@ export const getSchedulesByTeacher = async (req: Request, res: Response) => {
 export const createSchedule = async (req: Request, res: Response) => {
   try {
     const { teacherId, subjectId, day, startTime, endTime, maxStudents } = req.body;
+    const timeError = validateScheduleTimes(startTime, endTime);
+    if (timeError) {
+      res.status(400).json({ message: timeError });
+      return;
+    }
+    const maxStudentsError = validateMaxStudents(maxStudents);
+    if (maxStudentsError) {
+      res.status(400).json({ message: maxStudentsError });
+      return;
+    }
     const schedule = await TeacherSchedule.create({
       teacherId,
       subjectId,
@@ -88,6 +119,21 @@ export const updateSchedule = async (req: Request, res: Response) => {
       return;
     }
     const { day, startTime, endTime, maxStudents, isActive } = req.body;
+    if (startTime !== undefined || endTime !== undefined) {
+      const timeError = validateScheduleTimes(
+        startTime ?? schedule.startTime,
+        endTime ?? schedule.endTime,
+      );
+      if (timeError) {
+        res.status(400).json({ message: timeError });
+        return;
+      }
+    }
+    const maxStudentsError = validateMaxStudents(maxStudents);
+    if (maxStudentsError) {
+      res.status(400).json({ message: maxStudentsError });
+      return;
+    }
     if (day !== undefined) schedule.day = day;
     if (startTime !== undefined) schedule.startTime = startTime;
     if (endTime !== undefined) schedule.endTime = endTime;
@@ -130,6 +176,22 @@ export const enrollInSchedule = async (req: any, res: Response) => {
       res.status(400).json({ message: 'Schedule is full' });
       return;
     }
+
+    // A student can only join a teacher's schedule for a subject they've
+    // actually paid for.
+    const hasAccess = await Subscription.exists({
+      studentId,
+      teacherId: schedule.teacherId,
+      subjectId: schedule.subjectId,
+      status: 'active',
+    });
+    if (!hasAccess) {
+      res.status(403).json({
+        message: 'You must be subscribed to this subject with this teacher first',
+      });
+      return;
+    }
+
     schedule.enrolledStudents.push(studentId);
     await schedule.save();
     res.json(schedule);

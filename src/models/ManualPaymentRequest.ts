@@ -12,8 +12,6 @@ export interface IManualPaymentRequest extends Document {
   unitId?: mongoose.Types.ObjectId;
   liveLessonRequestId?: mongoose.Types.ObjectId;
   purpose: ManualPaymentPurpose;
-  plan?: "Monthly" | "Quarterly" | "Yearly";
-  planDays?: number;
   method: ManualPaymentMethod;
   amountEGP: number;
   // Shown to the student to write as the transfer reference/note, so an
@@ -38,8 +36,6 @@ const ManualPaymentRequestSchema = new Schema<IManualPaymentRequest>(
     unitId: { type: Schema.Types.ObjectId, ref: "Unit" },
     liveLessonRequestId: { type: Schema.Types.ObjectId, ref: "LiveLessonRequest" },
     purpose: { type: String, enum: ["subject", "unit", "liveLesson"], required: true },
-    plan: { type: String, enum: ["Monthly", "Quarterly", "Yearly"] },
-    planDays: { type: Number },
     method: { type: String, enum: ["InstaPay", "VodafoneCash", "Fawry"], required: true },
     amountEGP: { type: Number, required: true },
     referenceCode: { type: String, required: true },

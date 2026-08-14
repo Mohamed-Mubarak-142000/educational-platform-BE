@@ -107,6 +107,13 @@ export interface PlatformSettings {
   maintenanceMode: boolean;
   contactEmail: string;
   socialLinks: Array<{ platform: string; url: string; icon: string }>;
+  // Platform's cut of a live-lesson payment, in basis points (3000 = 30%).
+  // The remainder becomes the teacher's earning — see TeacherEarning model.
+  commissionRateBps: number;
+  // Flat fee (in cents) the platform takes from every subject/unit
+  // subscription payment — independent of commissionRateBps, which only
+  // applies to live-lesson payments.
+  subscriptionFlatFeeCents: number;
 }
 
 // ─── Main document interface ─────────────────────────────────────────────────
@@ -264,6 +271,8 @@ const PlatformConfigSchema = new Schema<IPlatformConfig>(
       maintenanceMode: { type: Boolean, default: false },
       contactEmail: { type: String, default: '' },
       socialLinks: { type: [SocialLinkSchema], default: [] },
+      commissionRateBps: { type: Number, default: 3000 },
+      subscriptionFlatFeeCents: { type: Number, default: 5000 },
     },
     version: { type: Number, default: 1 },
   },

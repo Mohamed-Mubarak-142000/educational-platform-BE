@@ -129,13 +129,15 @@ const DEFAULT_CONFIG: Omit<IPlatformConfig, keyof Document> = {
     maintenanceMode: false,
     contactEmail: '',
     socialLinks: [],
+    commissionRateBps: 3000,
+    subscriptionFlatFeeCents: 5000,
   },
   version: 1,
 } as any;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function getOrCreateConfig(): Promise<IPlatformConfig> {
+export async function getOrCreateConfig(): Promise<IPlatformConfig> {
   let config = await PlatformConfig.findOne();
   if (!config) {
     config = await PlatformConfig.create(DEFAULT_CONFIG);

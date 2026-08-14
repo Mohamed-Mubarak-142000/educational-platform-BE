@@ -22,7 +22,7 @@ export const getStudentSubscriptionScope = async (params: {
     teacherId: params.teacherId,
     subjectId: params.subjectId,
     gradeId: params.gradeId,
-    status: { $in: ["active", "expiring_soon"] },
+    status: "active",
     expiresAt: { $gt: new Date() },
   }).lean();
 
@@ -34,6 +34,68 @@ export const getStudentSubscriptionScope = async (params: {
   );
 
   return { subjectAccess, unitAccessIds };
+};
+
+// A student's real "which units am I enrolled in" list — driven entirely by
+// Subscription (the source of truth for access), not the separate
+// UnitEnrollment collection, which nothing in the payment/approval flow ever
+// writes to.
+export const getAccessibleUnitIdsForStudent = async (
+  studentId: string,
+): Promise<string[]> => {
+  const subs = await Subscription.find({
+    studentId,
+    status: "active",
+    expiresAt: { $gt: new Date() },
+  }).lean();
+
+  const unitIds = new Set<string>();
+  const subjectSubs: typeof subs = [];
+  for (const s of subs as any[]) {
+    if (s.type === "unit" && s.unitId) {
+      unitIds.add(String(s.unitId));
+    } else if (s.type === "subject") {
+      subjectSubs.push(s);
+    }
+  }
+
+  if (subjectSubs.length > 0) {
+    const assignments = await TeacherAssignment.find({
+      $or: subjectSubs.map((s: any) => ({
+        teacherId: s.teacherId,
+        subjectId: s.subjectId,
+        gradeId: s.gradeId,
+      })),
+    })
+      .select("_id")
+      .lean();
+    const assignmentIds = assignments.map((a: any) => a._id);
+    if (assignmentIds.length > 0) {
+      const units = await Unit.find({ assignmentId: { $in: assignmentIds } })
+        .select("_id")
+        .lean();
+      units.forEach((u: any) => unitIds.add(String(u._id)));
+    }
+  }
+
+  return Array.from(unitIds);
+};
+
+// Distinct students with an active subscription to this teacher (optionally
+// scoped to one subject) — the correct source for "my students" / student
+// counts, replacing the disconnected UnitEnrollment collection.
+export const getActiveStudentIdsForTeacher = async (
+  teacherId: string,
+  subjectId?: string,
+): Promise<string[]> => {
+  const filter: Record<string, unknown> = {
+    teacherId,
+    status: "active",
+    expiresAt: { $gt: new Date() },
+  };
+  if (subjectId) filter.subjectId = subjectId;
+  const ids = await Subscription.distinct("studentId", filter);
+  return ids.map((id: any) => String(id));
 };
 
 export const canAccessLesson = async (params: {

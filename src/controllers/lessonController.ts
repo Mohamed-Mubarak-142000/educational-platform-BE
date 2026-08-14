@@ -3,7 +3,10 @@ import Lesson from "../models/Lesson";
 import LessonPart from "../models/LessonPart";
 import Progress from "../models/Progress";
 import Comment from "../models/Comment";
+import Unit from "../models/Unit";
 import { canAccessLesson } from "../utils/subscriptionAccess";
+import { checkTeacherSubjectAccess } from "../middlewares/rbacMiddleware";
+import { signMediaFields } from "../utils/cloudinarySignedUrl";
 
 const assertUnitLessonOwnership = (
   req: any,
@@ -35,8 +38,29 @@ export const getLessons = async (req: Request, res: Response) => {
         res.status(403).json({ message: "Lesson locked" });
         return;
       }
+    } else if (reqUser?.role === "Teacher") {
+      const isOwner =
+        lesson.teacherId && String(lesson.teacherId) === String(reqUser._id);
+      if (!isOwner) {
+        const unit = lesson.unitId
+          ? await Unit.findById(lesson.unitId).select("subjectId gradeId").lean()
+          : null;
+        const hasAccess = unit
+          ? await checkTeacherSubjectAccess(
+              String(reqUser._id),
+              String(unit.subjectId),
+              String(unit.gradeId),
+            )
+          : false;
+        if (!hasAccess) {
+          res.status(403).json({
+            message: "Access denied. You are not assigned to this lesson's subject/grade.",
+          });
+          return;
+        }
+      }
     }
-    res.json(lesson);
+    res.json(signMediaFields(lesson.toObject()));
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -148,10 +172,13 @@ export const addLessonComment = async (req: any, res: Response) => {
 
 export const getPartsByLesson = async (req: Request, res: Response) => {
   try {
-    const parts = await LessonPart.find({ lessonId: req.params.lessonId }).sort(
-      { order: 1 },
+    const parts = await LessonPart.find({ lessonId: req.params.lessonId })
+      .sort({ order: 1 })
+      .lean();
+    const signed = parts.map((part: any) =>
+      part.media ? { ...part, media: signMediaFields(part.media) } : part,
     );
-    res.json(parts);
+    res.json(signed);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

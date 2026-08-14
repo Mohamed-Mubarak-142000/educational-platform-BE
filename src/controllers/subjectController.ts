@@ -98,13 +98,6 @@ export const getSubjects = async (req: AuthRequest, res: Response) => {
 
           return false;
         });
-
-        console.log(
-          "[getSubjects] Filtered by stage:",
-          (stage as any).name,
-          "- Found:",
-          subjects.length,
-        );
       }
     }
 
@@ -310,14 +303,6 @@ export const getSubjectTeacherContent = async (
         );
       }
     }
-
-    console.log("[getSubjectTeacherContent] content debug", {
-      subjectId: subjectIdStr,
-      teacherId: teacherIdStr,
-      gradeId: gradeId ?? null,
-      assignmentId: String(assignment._id),
-      unitsCount: units.length,
-    });
 
     const unitIds = units.map((u) => u._id);
     let lessons = await Lesson.find({

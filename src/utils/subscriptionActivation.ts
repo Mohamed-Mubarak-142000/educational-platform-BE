@@ -1,20 +1,15 @@
 import mongoose from 'mongoose';
 import Payment, { IPayment } from '../models/Payment';
-import Subscription from '../models/Subscription';
+import Subscription, { LIFETIME_EXPIRY } from '../models/Subscription';
 import TeacherSchedule from '../models/TeacherSchedule';
 
-// Shared by the Paymob webhook and the manual-payment approval flow — both
-// ultimately produce a "success" Payment for a subject/unit purchase, and
-// this is the one place that turns that into an actual Subscription
-// (+ auto-enrollment), so the two paths can't drift apart.
+// Shared by the manual-payment approval flow — turns a successful Payment
+// into a lifetime Subscription (+ auto-enrollment into the teacher's
+// schedule) exactly once.
 export async function activateSubjectOrUnitSubscription(
   session: mongoose.ClientSession,
   payment: IPayment
 ): Promise<void> {
-  const planDays = payment.planDays!;
-  const now = new Date();
-  const expiresAt = new Date(now.getTime() + planDays * 24 * 60 * 60 * 1000);
-
   const filter = {
     studentId: payment.studentId,
     teacherId: payment.teacherId,
@@ -28,19 +23,17 @@ export async function activateSubjectOrUnitSubscription(
   let subscriptionId: mongoose.Types.ObjectId;
 
   if (existingSub) {
-    const newExpiry =
-      existingSub.expiresAt > now
-        ? new Date(existingSub.expiresAt.getTime() + planDays * 24 * 60 * 60 * 1000)
-        : expiresAt;
-
+    // Already owns this content for life (e.g. re-purchase after a refund) —
+    // just reactivate it and point it at this payment.
     await Subscription.findByIdAndUpdate(
       existingSub._id,
       {
         status: 'active',
-        expiresAt: newExpiry,
         paymentId: payment._id,
-        plan: payment.plan,
-        planDays: payment.planDays,
+        expiresAt: LIFETIME_EXPIRY,
+        revokedBy: undefined,
+        revokedAt: undefined,
+        revokedReason: undefined,
       },
       { session }
     );
@@ -57,30 +50,28 @@ export async function activateSubjectOrUnitSubscription(
           type: payment.subscriptionType,
           status: 'active',
           paymentId: payment._id,
-          plan: payment.plan,
-          planDays: payment.planDays,
-          startsAt: now,
-          expiresAt,
-          autoRenew: false,
+          startsAt: new Date(),
+          expiresAt: LIFETIME_EXPIRY,
         },
       ],
       { session }
     );
     subscriptionId = newSub._id as mongoose.Types.ObjectId;
+  }
 
-    // AUTO-ENROLL: Add student to teacher's schedules for this subject
-    const schedules = await TeacherSchedule.find({
-      teacherId: payment.teacherId,
-      subjectId: payment.subjectId,
-      isActive: true,
-    });
+  // AUTO-ENROLL: add the student to the teacher's schedules for this subject
+  // (idempotent — safe to run again on reactivation too).
+  const schedules = await TeacherSchedule.find({
+    teacherId: payment.teacherId,
+    subjectId: payment.subjectId,
+    isActive: true,
+  }).session(session);
 
-    for (const schedule of schedules) {
-      if (!schedule.enrolledStudents.includes(payment.studentId)) {
-        if (schedule.enrolledStudents.length < schedule.maxStudents) {
-          schedule.enrolledStudents.push(payment.studentId);
-          await schedule.save({ session });
-        }
+  for (const schedule of schedules) {
+    if (!schedule.enrolledStudents.includes(payment.studentId)) {
+      if (schedule.enrolledStudents.length < schedule.maxStudents) {
+        schedule.enrolledStudents.push(payment.studentId);
+        await schedule.save({ session });
       }
     }
   }

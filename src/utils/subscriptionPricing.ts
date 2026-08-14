@@ -1,17 +1,9 @@
 import mongoose from 'mongoose';
 import Unit from '../models/Unit';
 
-export const PLAN_CONFIG: Record<'Monthly' | 'Quarterly' | 'Yearly', { days: number; factor: number }> = {
-  Monthly: { days: 30, factor: 1.0 },
-  Quarterly: { days: 90, factor: 2.4 },
-  Yearly: { days: 365, factor: 8.0 },
-};
-
-export type SubscriptionPlanName = keyof typeof PLAN_CONFIG;
-
-// Shared by the Paymob checkout, the manual-payment quote, and manual-payment
-// request creation — one place computes "how much does this cost", so the
-// three paths can never quietly drift apart.
+// Shared by the manual-payment quote and manual-payment request creation —
+// one place computes "how much does this cost", so the two paths can never
+// quietly drift apart.
 export async function getSubjectOrUnitBasePriceEGP(params: {
   subscriptionType: 'subject' | 'unit';
   unitId?: string;
@@ -41,10 +33,7 @@ export async function getSubjectOrUnitBasePriceEGP(params: {
   return total > 0 ? total : 300; // fallback 300 EGP
 }
 
-export function computeAmountCents(
-  basePriceEGP: number,
-  plan: SubscriptionPlanName
-): { amountCents: number; planDays: number } {
-  const { days, factor } = PLAN_CONFIG[plan];
-  return { amountCents: Math.round(basePriceEGP * factor * 100), planDays: days };
+// One-time purchase price, in cents — no plan/duration multiplier.
+export function computeAmountCents(basePriceEGP: number): number {
+  return Math.round(basePriceEGP * 100);
 }

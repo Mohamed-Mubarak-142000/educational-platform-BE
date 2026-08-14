@@ -6,15 +6,15 @@ import ManualPaymentRequest, {
   type ManualPaymentMethod,
 } from "../models/ManualPaymentRequest";
 import Payment from "../models/Payment";
+import Subscription from "../models/Subscription";
 import TeacherAssignment from "../models/TeacherAssignment";
 import LiveLessonRequest from "../models/LiveLessonRequest";
 import {
-  PLAN_CONFIG,
   getSubjectOrUnitBasePriceEGP,
   computeAmountCents,
-  type SubscriptionPlanName,
 } from "../utils/subscriptionPricing";
 import { activateSubjectOrUnitSubscription } from "../utils/subscriptionActivation";
+import { createTeacherEarning } from "../utils/earningsActivation";
 
 const METHODS: ManualPaymentMethod[] = ["InstaPay", "VodafoneCash", "Fawry"];
 
@@ -69,7 +69,6 @@ export const createManualPaymentRequest = async (
       gradeId,
       unitId,
       subscriptionType,
-      plan,
     } = req.body as {
       method: ManualPaymentMethod;
       proofUrl: string;
@@ -80,7 +79,6 @@ export const createManualPaymentRequest = async (
       gradeId?: string;
       unitId?: string;
       subscriptionType?: "subject" | "unit";
-      plan?: SubscriptionPlanName;
     };
 
     if (!method || !METHODS.includes(method)) {
@@ -130,20 +128,16 @@ export const createManualPaymentRequest = async (
       return;
     }
 
-    // ── Subject/unit subscription payment ──
-    if (!teacherId || !subjectId || !gradeId || !subscriptionType || !plan) {
+    // ── Subject/unit one-time purchase ──
+    if (!teacherId || !subjectId || !gradeId || !subscriptionType) {
       res.status(400).json({
         message:
-          "Missing required fields: teacherId, subjectId, gradeId, subscriptionType, plan",
+          "Missing required fields: teacherId, subjectId, gradeId, subscriptionType",
       });
       return;
     }
-    if (!PLAN_CONFIG[plan]) {
-      res.status(400).json({ message: "Invalid plan" });
-      return;
-    }
     if (subscriptionType === "unit" && !unitId) {
-      res.status(400).json({ message: "unitId is required for unit subscriptions" });
+      res.status(400).json({ message: "unitId is required for unit purchases" });
       return;
     }
 
@@ -154,6 +148,24 @@ export const createManualPaymentRequest = async (
     });
     if (!assignment) {
       res.status(404).json({ message: "Teacher is not assigned to this subject/grade" });
+      return;
+    }
+
+    // Access is for life once purchased — block a duplicate purchase attempt
+    // instead of "renewing" something that never expires.
+    const existingSub = await Subscription.findOne({
+      studentId: req.user._id,
+      teacherId,
+      subjectId,
+      gradeId,
+      unitId: subscriptionType === "unit" ? unitId : undefined,
+      type: subscriptionType,
+      status: "active",
+    });
+    if (existingSub) {
+      res.status(409).json({
+        message: "You already have access to this content",
+      });
       return;
     }
 
@@ -171,7 +183,7 @@ export const createManualPaymentRequest = async (
       return;
     }
 
-    const { amountCents, planDays } = computeAmountCents(basePriceEGP, plan);
+    const amountCents = computeAmountCents(basePriceEGP);
 
     const doc = await ManualPaymentRequest.create({
       studentId: req.user._id,
@@ -180,8 +192,6 @@ export const createManualPaymentRequest = async (
       gradeId,
       unitId: subscriptionType === "unit" ? unitId : undefined,
       purpose: subscriptionType,
-      plan,
-      planDays,
       method,
       proofUrl,
       senderNote,
@@ -212,21 +222,57 @@ export const getMyManualPaymentRequests = async (req: AuthRequest, res: Response
 };
 
 // ---------------------------------------------------------------------------
-// @desc  All manual payment requests (optionally filtered by status)
+// @desc  Manual payment requests addressed to the logged-in teacher
+//        (optionally filtered by status)
 // @route GET /api/manual-payments
-// @access Admin
+// @access Teacher
 // ---------------------------------------------------------------------------
 export const getManualPaymentRequests = async (req: AuthRequest, res: Response) => {
   try {
-    const { status } = req.query as { status?: string };
-    const filter: Record<string, unknown> = {};
-    if (status) filter.status = status;
+    const {
+      status,
+      search,
+      method,
+      purpose,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+    } = req.query as {
+      status?: string;
+      search?: string;
+      method?: string;
+      purpose?: string;
+      sortBy?: string;
+      sortOrder?: string;
+    };
 
-    const items = await ManualPaymentRequest.find(filter)
+    // A teacher only ever sees requests made against them — never another
+    // teacher's queue.
+    const filter: Record<string, unknown> = { teacherId: req.user!._id };
+    if (status) filter.status = status;
+    if (purpose) filter.purpose = purpose;
+    if (method) {
+      const methods = method.split(",").filter(Boolean);
+      if (methods.length > 0) filter.method = { $in: methods };
+    }
+
+    const sortDir = sortOrder === "asc" ? 1 : -1;
+
+    let items: any[] = await ManualPaymentRequest.find(filter)
       .populate("studentId", "name email")
       .populate("teacherId", "name")
       .populate("subjectId", "name nameAr icon")
-      .sort({ createdAt: -1 });
+      .sort({ [sortBy]: sortDir })
+      .lean();
+
+    if (search) {
+      const regex = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      items = items.filter((item) => {
+        const student = item.studentId as any;
+        const name = student && typeof student === "object" ? student.name : undefined;
+        return regex.test(name ?? "");
+      });
+    }
+
     res.json(items);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -235,16 +281,20 @@ export const getManualPaymentRequests = async (req: AuthRequest, res: Response) 
 
 // ---------------------------------------------------------------------------
 // @desc  Approve a manual payment — synthesizes a successful Payment record
-//        and runs it through the exact same activation path as a Paymob
-//        webhook success (subscription creation / live-lesson paid flag).
+//        and runs it through the same activation path used everywhere else
+//        (subscription creation / live-lesson paid flag).
 // @route POST /api/manual-payments/:id/approve
-// @access Admin
+// @access Teacher (own requests only)
 // ---------------------------------------------------------------------------
 export const approveManualPaymentRequest = async (req: AuthRequest, res: Response) => {
   try {
     const request = await ManualPaymentRequest.findById(req.params.id);
     if (!request) {
       res.status(404).json({ message: "Payment request not found" });
+      return;
+    }
+    if (String(request.teacherId) !== String(req.user!._id)) {
+      res.status(403).json({ message: "This request does not belong to you" });
       return;
     }
     if (request.status !== "Pending") {
@@ -265,8 +315,6 @@ export const approveManualPaymentRequest = async (req: AuthRequest, res: Respons
               unitId: request.unitId,
               subscriptionType: request.purpose,
               liveLessonRequestId: request.liveLessonRequestId,
-              plan: request.plan,
-              planDays: request.planDays,
               amountCents: Math.round(request.amountEGP * 100),
               currency: "EGP",
               status: "success",
@@ -290,6 +338,7 @@ export const approveManualPaymentRequest = async (req: AuthRequest, res: Respons
         } else {
           await activateSubjectOrUnitSubscription(session, payment);
         }
+        await createTeacherEarning(session, payment);
 
         request.status = "Approved";
         request.reviewedBy = req.user!._id as mongoose.Types.ObjectId;
@@ -310,13 +359,17 @@ export const approveManualPaymentRequest = async (req: AuthRequest, res: Respons
 // ---------------------------------------------------------------------------
 // @desc  Reject a manual payment request
 // @route POST /api/manual-payments/:id/reject
-// @access Admin
+// @access Teacher (own requests only)
 // ---------------------------------------------------------------------------
 export const rejectManualPaymentRequest = async (req: AuthRequest, res: Response) => {
   try {
     const request = await ManualPaymentRequest.findById(req.params.id);
     if (!request) {
       res.status(404).json({ message: "Payment request not found" });
+      return;
+    }
+    if (String(request.teacherId) !== String(req.user!._id)) {
+      res.status(403).json({ message: "This request does not belong to you" });
       return;
     }
     if (request.status !== "Pending") {

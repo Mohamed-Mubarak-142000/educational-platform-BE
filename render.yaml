@@ -35,17 +35,5 @@ services:
         value: Educational Platform
       - key: FROM_EMAIL
         value: noreply@educationalplatform.com
-      - key: PAYMOB_API_KEY
-        sync: false
-      - key: PAYMOB_INTEGRATION_ID
-        sync: false
-      - key: PAYMOB_IFRAME_ID
-        sync: false
-      - key: PAYMOB_HMAC_SECRET
-        sync: false
-      - key: PAYMOB_SECRET_KEY
-        sync: false
-      - key: PAYMOB_PUBLIC_KEY
-        sync: false
       - key: FRONTEND_URL
         sync: false

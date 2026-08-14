@@ -7,8 +7,11 @@ import User from "../models/User";
 import Grade from "../models/Grade";
 import Lesson from "../models/Lesson";
 import UnitQuiz from "../models/UnitQuiz";
-import UnitEnrollment from "../models/UnitEnrollment";
-import { getStudentSubscriptionScope } from "../utils/subscriptionAccess";
+import Subscription from "../models/Subscription";
+import {
+  getStudentSubscriptionScope,
+  getActiveStudentIdsForTeacher,
+} from "../utils/subscriptionAccess";
 
 // ---------------------------------------------------------------------------
 // @desc  Get all assignments (filter by teacherId / subjectId / gradeId)
@@ -592,49 +595,44 @@ export const getTeacherDashboard = async (req: Request, res: Response) => {
       unitId: { $in: unitIds },
     });
 
-    // 6. Unique students enrolled in teacher's units
-    const studentIdList =
-      unitIds.length > 0
-        ? await UnitEnrollment.distinct("studentId", {
-            unitId: { $in: unitIds },
-          })
-        : [];
+    // 6. Unique students with an active subscription to this teacher — the
+    // real source of access (UnitEnrollment is never written to by the
+    // actual payment/subscription-approval flow, so it always reads empty).
+    const studentIdList = await getActiveStudentIdsForTeacher(String(teacherId));
 
-    // 7. Student growth — distinct enrolled students grouped by month (last 6 months)
+    // 7. Student growth — distinct subscribing students grouped by month (last 6 months)
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
     sixMonthsAgo.setDate(1);
     sixMonthsAgo.setHours(0, 0, 0, 0);
 
-    const studentGrowth =
-      unitIds.length > 0
-        ? await UnitEnrollment.aggregate([
-            {
-              $match: {
-                unitId: { $in: unitIds },
-                createdAt: { $gte: sixMonthsAgo },
-              },
-            },
-            {
-              $group: {
-                _id: {
-                  year: { $year: "$createdAt" },
-                  month: { $month: "$createdAt" },
-                },
-                students: { $addToSet: "$studentId" },
-              },
-            },
-            {
-              $project: {
-                _id: 0,
-                year: "$_id.year",
-                month: "$_id.month",
-                count: { $size: "$students" },
-              },
-            },
-            { $sort: { year: 1, month: 1 } },
-          ])
-        : [];
+    const studentGrowth = await Subscription.aggregate([
+      {
+        $match: {
+          teacherId,
+          status: "active",
+          createdAt: { $gte: sixMonthsAgo },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: "$createdAt" },
+            month: { $month: "$createdAt" },
+          },
+          students: { $addToSet: "$studentId" },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          year: "$_id.year",
+          month: "$_id.month",
+          count: { $size: "$students" },
+        },
+      },
+      { $sort: { year: 1, month: 1 } },
+    ]);
 
     // 8. Content stats — lessons created per month (last 6 months)
     const contentStats =

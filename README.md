@@ -9,12 +9,12 @@ Node.js/Express REST API for the Educational Platform with real-time features us
 - Course & lesson management
 - Quiz system with auto-grading
 - Live classroom with video/chat
-- Payment integration (Paymob)
-- Subscription management with auto-renewal
+- Manual payments (InstaPay / Vodafone Cash / Fawry) with admin review
+- One-time purchase = lifetime access to a subject/unit
 - File upload to Cloudinary
 - Email notifications
 - Real-time features with Socket.IO
-- Automated cron jobs for subscription checks
+- Automated cron job for stale pending-payment cleanup
 
 ## 📋 Prerequisites
 
@@ -50,7 +50,6 @@ Node.js/Express REST API for the Educational Platform with real-time features us
    - `JWT_SECRET` - Secret for JWT tokens
    - `CLOUDINARY_*` - Cloudinary credentials
    - `EMAIL_*` - Email service configuration
-   - `PAYMOB_*` - Paymob payment gateway keys
    - `FRONTEND_URL` - Frontend URL for CORS
 
 4. **Start development server**:
@@ -122,15 +121,24 @@ Authorization: Bearer <token>
 
 #### Subscriptions
 
-- `GET /api/subscriptions` - Get user subscriptions
-- `POST /api/subscriptions` - Create subscription
-- `POST /api/subscriptions/:id/renew` - Renew subscription
+- `GET /api/subscriptions/mine` - Get the student's active (lifetime) subscriptions
 
-#### Payments (Paymob)
+#### Payments
 
-- `POST /api/payments/paymob/initiate` - Start payment
-- `POST /api/payments/paymob/webhook` - Payment webhook
-- `GET /api/payments/paymob/history` - Payment history
+- `GET /api/payments/quote` - Price quote for a subject/unit purchase
+- `GET /api/payments/my-history` - Student's own payment history
+- `GET /api/payments/status/:id` - Check a payment's status
+- `GET /api/payments/admin/analytics` - Admin revenue analytics
+- `POST /api/payments/:id/refund` - Admin refund (internal bookkeeping only)
+
+#### Manual Payments (InstaPay / Vodafone Cash / Fawry)
+
+- `POST /api/manual-payments/upload` - Upload a payment proof screenshot
+- `POST /api/manual-payments` - Submit a manual payment request
+- `GET /api/manual-payments/mine` - Student's own manual payment requests
+- `GET /api/manual-payments` - Admin review queue
+- `POST /api/manual-payments/:id/approve` - Admin approves → grants lifetime access
+- `POST /api/manual-payments/:id/reject` - Admin rejects
 
 #### Live Classroom
 
@@ -226,10 +234,6 @@ npm run build
 | `EMAIL_PORT`            | SMTP port             | `587`                         |
 | `EMAIL_USER`            | Email address         | `your@email.com`              |
 | `EMAIL_PASSWORD`        | Email app password    | `app_password`                |
-| `PAYMOB_API_KEY`        | Paymob API key        | `api_key`                     |
-| `PAYMOB_INTEGRATION_ID` | Integration ID        | `123456`                      |
-| `PAYMOB_IFRAME_ID`      | Iframe ID             | `123456`                      |
-| `PAYMOB_HMAC_SECRET`    | HMAC secret           | `secret`                      |
 | `FRONTEND_URL`          | Frontend URL for CORS | `http://localhost:5173`       |
 
 ## 📞 Support

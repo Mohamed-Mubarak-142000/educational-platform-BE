@@ -40,6 +40,21 @@ export const createLiveLessonRequest = async (req: any, res: Response) => {
       return;
     }
 
+    // Reject out-of-range duration before it feeds the price calculation
+    // below — the schema enforces the same bounds on save, but that would
+    // otherwise surface as an opaque 500 after computing a bogus price.
+    if (
+      typeof duration !== "number" ||
+      !Number.isFinite(duration) ||
+      duration < 15 ||
+      duration > 180
+    ) {
+      res
+        .status(400)
+        .json({ message: "duration must be a number between 15 and 180 minutes" });
+      return;
+    }
+
     // Calculate price based on duration and urgency
     const pricePerHour = teacher.instantLessonPricePerHour || 100;
     const durationHours = duration / 60;
@@ -145,9 +160,9 @@ export const cancelRequest = async (req: any, res: Response) => {
     }
 
     request.status = "cancelled";
-    // Bookkeeping only, matching the existing admin refund flow — this
-    // platform doesn't call Paymob's refund API anywhere yet, it just marks
-    // the records so an admin knows a manual refund is owed.
+    // Bookkeeping only, matching the existing admin refund flow — there is no
+    // electronic gateway to call, this just marks the records so an admin
+    // knows a manual refund is owed.
     if (request.paymentStatus === "paid") {
       request.paymentStatus = "refunded";
       if (request.paymentId) {

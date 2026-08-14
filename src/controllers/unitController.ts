@@ -5,17 +5,20 @@ import LessonPart from '../models/LessonPart';
 import UnitQuiz from '../models/UnitQuiz';
 import MCQQuestion from '../models/MCQQuestion';
 import UnitAvailability from '../models/UnitAvailability';
-import UnitEnrollment from '../models/UnitEnrollment';
 import QuizGrade from '../models/QuizGrade';
-import Comment from '../models/Comment';
 import { AuthRequest } from '../middlewares/authMiddleware';
 import { attachCreator, checkTeacherSubjectAccess } from '../middlewares/rbacMiddleware';
 import TeacherAssignment from '../models/TeacherAssignment';
-import { getStudentSubscriptionScope } from '../utils/subscriptionAccess';
+import {
+  getStudentSubscriptionScope,
+  getAccessibleUnitIdsForStudent,
+} from '../utils/subscriptionAccess';
+import { signMediaFields } from '../utils/cloudinarySignedUrl';
 
 // Resolve the Unit a quiz is attached to, whether directly (unit) or via a
 // lesson / lesson-part, so teacher ownership can be checked against it.
-const resolveUnitForQuiz = async (quiz: { attachedTo: string; attachedToId: any }) => {
+const resolveUnitForQuiz = async (quiz: { attachedTo: string; attachedToId: any } | null) => {
+  if (!quiz) return null;
   if (quiz.attachedTo === 'unit') {
     return Unit.findById(quiz.attachedToId).select('subjectId gradeId').lean();
   }
@@ -32,6 +35,21 @@ const resolveUnitForQuiz = async (quiz: { attachedTo: string; attachedToId: any 
     return Unit.findById(lesson.unitId).select('subjectId gradeId').lean();
   }
   return null;
+};
+
+// Admins may manage any quiz/question. Teachers may only manage quizzes
+// attached to units within a subject/grade they are assigned to — this is
+// the same scope check enforced on Unit/Lesson write routes.
+const assertTeacherOwnsQuiz = async (
+  user: AuthRequest['user'],
+  quiz: { attachedTo: string; attachedToId: any } | null,
+): Promise<boolean> => {
+  if (!user) return false;
+  if (user.role === 'Admin') return true;
+  if (user.role !== 'Teacher') return false;
+  const unit = await resolveUnitForQuiz(quiz);
+  if (!unit) return false;
+  return checkTeacherSubjectAccess(user._id.toString(), String(unit.subjectId), String(unit.gradeId));
 };
 
 // ── Unit CRUD ─────────────────────────────────────────────────────
@@ -94,10 +112,25 @@ export const getLessonsByUnit = async (req: Request, res: Response) => {
     }
 
     const lessons = await Lesson.find({ unitId }).sort({ order: 1 }).lean();
+    const signedLessons = lessons.map((lesson: any) => signMediaFields(lesson));
 
     const reqUser = (req as any).user;
-    if (!reqUser || reqUser.role !== 'Student') {
-      res.json(lessons);
+    if (reqUser?.role === 'Admin') {
+      res.json(signedLessons);
+      return;
+    }
+
+    if (reqUser?.role === 'Teacher') {
+      const hasAccess = await checkTeacherSubjectAccess(
+        String(reqUser._id),
+        String(unit.subjectId),
+        String(unit.gradeId),
+      );
+      if (!hasAccess) {
+        res.status(403).json({ message: "Access denied. You are not assigned to this unit's subject/grade." });
+        return;
+      }
+      res.json(signedLessons);
       return;
     }
 
@@ -118,7 +151,7 @@ export const getLessonsByUnit = async (req: Request, res: Response) => {
 
     const unitUnlocked = scope.subjectAccess || scope.unitAccessIds.has(String(unit._id));
 
-    const sanitized = lessons.map((lesson: any, idx: number) => {
+    const sanitized = signedLessons.map((lesson: any, idx: number) => {
       const isFree = idx === 0;
       const locked = !unitUnlocked && !isFree;
       if (!locked) {
@@ -179,50 +212,6 @@ export const createLessonForUnit = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// ── Lesson Parts ──────────────────────────────────────────────────
-
-export const getPartsByLesson = async (req: Request, res: Response) => {
-  try {
-    const parts = await LessonPart.find({ lessonId: req.params.lessonId as string }).sort({ order: 1 });
-    res.json(parts);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-export const createLessonPart = async (req: Request, res: Response) => {
-  try {
-    const lessonId = req.params.lessonId as string;
-    const { title, content, media, quiz, order } = req.body;
-    const count = await LessonPart.countDocuments({ lessonId });
-    const part = await LessonPart.create({
-      lessonId,
-      title,
-      content,
-      media,
-      quiz,
-      order: order !== undefined ? order : count + 1,
-    });
-    res.status(201).json(part);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-export const deleteLessonPart = async (req: Request, res: Response) => {
-  try {
-    const part = await LessonPart.findById(req.params.id);
-    if (!part) {
-      res.status(404).json({ message: 'Lesson part not found' });
-      return;
-    }
-    await part.deleteOne();
-    res.json({ message: 'Lesson part deleted successfully' });
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
 // ── Unit Quiz ─────────────────────────────────────────────────────
 
 export const getQuizByAttached = async (req: Request, res: Response) => {
@@ -234,9 +223,18 @@ export const getQuizByAttached = async (req: Request, res: Response) => {
   }
 };
 
-export const createUnitQuiz = async (req: Request, res: Response) => {
+export const createUnitQuiz = async (req: AuthRequest, res: Response) => {
   try {
     const { attachedTo, attachedToId, title, timeLimit } = req.body;
+    if (!attachedTo || !attachedToId) {
+      res.status(400).json({ message: 'attachedTo and attachedToId are required' });
+      return;
+    }
+    const allowed = await assertTeacherOwnsQuiz(req.user, { attachedTo, attachedToId });
+    if (!allowed) {
+      res.status(403).json({ message: 'Access denied. You are not assigned to this subject/grade.' });
+      return;
+    }
     const existing = await UnitQuiz.findOne({ attachedToId });
     if (existing) {
       res.status(400).json({ message: 'A quiz already exists for this unit/lesson' });
@@ -249,11 +247,16 @@ export const createUnitQuiz = async (req: Request, res: Response) => {
   }
 };
 
-export const updateUnitQuiz = async (req: Request, res: Response) => {
+export const updateUnitQuiz = async (req: AuthRequest, res: Response) => {
   try {
     const quiz = await UnitQuiz.findById(req.params.id);
     if (!quiz) {
       res.status(404).json({ message: 'Quiz not found' });
+      return;
+    }
+    const allowed = await assertTeacherOwnsQuiz(req.user, quiz);
+    if (!allowed) {
+      res.status(403).json({ message: 'Access denied. You are not assigned to this quiz\'s subject/grade.' });
       return;
     }
     if (req.body.title !== undefined) quiz.title = req.body.title;
@@ -265,11 +268,16 @@ export const updateUnitQuiz = async (req: Request, res: Response) => {
   }
 };
 
-export const deleteUnitQuiz = async (req: Request, res: Response) => {
+export const deleteUnitQuiz = async (req: AuthRequest, res: Response) => {
   try {
     const quiz = await UnitQuiz.findById(req.params.id);
     if (!quiz) {
       res.status(404).json({ message: 'Quiz not found' });
+      return;
+    }
+    const allowed = await assertTeacherOwnsQuiz(req.user, quiz);
+    if (!allowed) {
+      res.status(403).json({ message: 'Access denied. You are not assigned to this quiz\'s subject/grade.' });
       return;
     }
     await MCQQuestion.deleteMany({ quizId: quiz._id });
@@ -302,9 +310,23 @@ export const getQuestionsByQuiz = async (req: AuthRequest, res: Response) => {
   }
 };
 
-export const createMCQQuestion = async (req: Request, res: Response) => {
+export const createMCQQuestion = async (req: AuthRequest, res: Response) => {
   try {
-    const quizId = req.params.quizId as string;
+    const quizId = (req.params.quizId as string) || req.body.quizId;
+    if (!quizId) {
+      res.status(400).json({ message: 'quizId is required' });
+      return;
+    }
+    const quiz = await UnitQuiz.findById(quizId).select('attachedTo attachedToId').lean();
+    if (!quiz) {
+      res.status(404).json({ message: 'Quiz not found' });
+      return;
+    }
+    const allowed = await assertTeacherOwnsQuiz(req.user, quiz);
+    if (!allowed) {
+      res.status(403).json({ message: 'Access denied. You are not assigned to this quiz\'s subject/grade.' });
+      return;
+    }
     const { text, options, correctAnswer } = req.body;
     const question = await MCQQuestion.create({ quizId, text, options, correctAnswer });
     res.status(201).json(question);
@@ -313,11 +335,17 @@ export const createMCQQuestion = async (req: Request, res: Response) => {
   }
 };
 
-export const updateMCQQuestion = async (req: Request, res: Response) => {
+export const updateMCQQuestion = async (req: AuthRequest, res: Response) => {
   try {
     const question = await MCQQuestion.findById(req.params.id);
     if (!question) {
       res.status(404).json({ message: 'Question not found' });
+      return;
+    }
+    const quiz = await UnitQuiz.findById(question.quizId).select('attachedTo attachedToId').lean();
+    const allowed = await assertTeacherOwnsQuiz(req.user, quiz);
+    if (!allowed) {
+      res.status(403).json({ message: 'Access denied. You are not assigned to this quiz\'s subject/grade.' });
       return;
     }
     const { text, options, correctAnswer } = req.body;
@@ -331,11 +359,17 @@ export const updateMCQQuestion = async (req: Request, res: Response) => {
   }
 };
 
-export const deleteMCQQuestion = async (req: Request, res: Response) => {
+export const deleteMCQQuestion = async (req: AuthRequest, res: Response) => {
   try {
     const question = await MCQQuestion.findById(req.params.id);
     if (!question) {
       res.status(404).json({ message: 'Question not found' });
+      return;
+    }
+    const quiz = await UnitQuiz.findById(question.quizId).select('attachedTo attachedToId').lean();
+    const allowed = await assertTeacherOwnsQuiz(req.user, quiz);
+    if (!allowed) {
+      res.status(403).json({ message: 'Access denied. You are not assigned to this quiz\'s subject/grade.' });
       return;
     }
     await question.deleteOne();
@@ -468,6 +502,9 @@ export const setUnitAvailability = async (req: Request, res: Response) => {
 
 // ── Unit Enrollment ───────────────────────────────────────────────
 
+// Which units a student currently has access to — derived from active
+// Subscriptions (the real record of what was paid for), not a separate
+// enrollment table a student could otherwise write to directly.
 export const getEnrolledUnitIds = async (req: AuthRequest, res: Response) => {
   try {
     const { studentId } = req.params as { studentId: string };
@@ -475,55 +512,10 @@ export const getEnrolledUnitIds = async (req: AuthRequest, res: Response) => {
       res.status(403).json({ message: 'Access denied.' });
       return;
     }
-    const enrollments = await UnitEnrollment.find({ studentId });
-    res.json(enrollments.map((e) => e.unitId));
+    const unitIds = await getAccessibleUnitIdsForStudent(studentId);
+    res.json(unitIds);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
 };
 
-export const enrollInUnit = async (req: any, res: Response) => {
-  try {
-    const { unitId } = req.body;
-    const studentId = req.user._id;
-    const existing = await UnitEnrollment.findOne({ studentId, unitId });
-    if (existing) {
-      res.json(existing);
-      return;
-    }
-    const enrollment = await UnitEnrollment.create({ studentId, unitId });
-    res.status(201).json(enrollment);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// ── Lesson Comments ───────────────────────────────────────────────
-
-export const getCommentsByLesson = async (req: Request, res: Response) => {
-  try {
-    const comments = await Comment.find({ lessonId: req.params.lessonId as string })
-      .populate('userId', 'name role')
-      .sort({ createdAt: 1 });
-    res.json(comments);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-export const addLessonComment = async (req: any, res: Response) => {
-  try {
-    const { lessonId } = req.params;
-    const { text } = req.body;
-    const comment = await Comment.create({
-      lessonId,
-      userId: req.user._id,
-      text,
-      likes: [],
-    });
-    const populated = await comment.populate('userId', 'name role');
-    res.status(201).json(populated);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
-  }
-};
