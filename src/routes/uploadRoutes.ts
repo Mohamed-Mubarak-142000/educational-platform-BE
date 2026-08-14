@@ -4,14 +4,18 @@ import { protect, teacher } from '../middlewares/authMiddleware';
 
 const router = express.Router();
 
-router.post('/', protect, teacher, upload.single('file'), async (req, res) => {
+// Accepts any field name — this route is used for lesson media ('file'),
+// the platform logo ('logo'), and potentially others; the actual folder/
+// access-mode per field is decided in uploadMiddleware.ts's storage params.
+router.post('/', protect, teacher, upload.any(), async (req, res) => {
   try {
-    if (!req.file) {
+    const uploadedFile = (req.files as Express.Multer.File[] | undefined)?.[0] as
+      | (Express.Multer.File & { path?: string; filename?: string; secure_url?: string })
+      | undefined;
+    if (!uploadedFile) {
       res.status(400).json({ message: 'No file uploaded' });
       return;
     }
-
-    const uploadedFile = req.file as Express.Multer.File & { path?: string; filename?: string; secure_url?: string };
     const isDocument = uploadedFile.mimetype === 'application/pdf'
       || uploadedFile.originalname.toLowerCase().endsWith('.pdf')
       || uploadedFile.originalname.toLowerCase().endsWith('.doc')
