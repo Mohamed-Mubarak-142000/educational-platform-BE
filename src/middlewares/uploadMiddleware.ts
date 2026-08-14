@@ -12,6 +12,10 @@ const resolveFolder = (file: Express.Multer.File) => {
     return 'users/avatars';
   }
 
+  if (field.includes('logo')) {
+    return 'platform/branding';
+  }
+
   if (mime.startsWith('video/')) {
     return 'products/videos';
   }
@@ -37,14 +41,15 @@ const resolveResourceType = (file: Express.Multer.File) => {
   return 'raw';
 };
 
-// Avatars are meant to be publicly visible everywhere (public teacher
-// profiles, comments...) so they stay open. Everything else through this
-// uploader is paid lesson content or a payment-proof screenshot — neither
-// should be a permanent, freely shareable public link, so it requires a
-// signed URL (see utils/cloudinarySignedUrl.ts) to be delivered.
+// Avatars and the platform logo are meant to be publicly visible everywhere
+// (public teacher profiles, comments, the site header/favicon...) so they
+// stay open. Everything else through this uploader is paid lesson content or
+// a payment-proof screenshot — neither should be a permanent, freely
+// shareable public link, so it requires a signed URL (see
+// utils/cloudinarySignedUrl.ts) to be delivered.
 const resolveAccessMode = (file: Express.Multer.File): 'public' | 'authenticated' => {
   const field = file.fieldname.toLowerCase();
-  if (field.includes('avatar') || field.includes('profile')) return 'public';
+  if (field.includes('avatar') || field.includes('profile') || field.includes('logo')) return 'public';
   return 'authenticated';
 };
 
@@ -54,7 +59,7 @@ const storage = new CloudinaryStorage({
     const filenameBase = file.originalname.split('.').slice(0, -1).join('.') || file.originalname;
     return {
       folder: resolveFolder(file),
-      allowed_formats: ['jpg', 'png', 'jpeg', 'webp', 'mp4', 'mov', 'webm', 'mp3', 'wav', 'm4a', 'pdf', 'doc', 'docx', 'glb', 'gltf', 'obj', 'fbx'],
+      allowed_formats: ['jpg', 'png', 'jpeg', 'webp', 'svg', 'mp4', 'mov', 'webm', 'mp3', 'wav', 'm4a', 'pdf', 'doc', 'docx', 'glb', 'gltf', 'obj', 'fbx'],
       public_id: `${Date.now()}-${filenameBase}`,
       resource_type: resolveResourceType(file),
       access_mode: resolveAccessMode(file),
